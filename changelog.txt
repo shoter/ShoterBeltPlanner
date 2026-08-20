@@ -1,0 +1,5 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-08-21
+  Info:
+    - Initial skeleton of Shoter Belt Planner. No in-game content yet.

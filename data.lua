@@ -1,0 +1,10 @@
+-- Data stage. Runs at every game load, before any world exists.
+--
+-- Available here: `data` (the prototype tables), `mods` (name -> version of every enabled mod),
+-- `settings.startup`. NOT available: `game`, `script`, `storage` -- those belong to control.lua.
+--
+-- Own prototypes go here. Edits to *other* mods' prototypes go in data-updates.lua, and
+-- last-resort compatibility fixes in data-final-fixes.lua.
+--
+-- As prototype files are added, pull them in from here:
+--   require("prototypes/belt-planner")

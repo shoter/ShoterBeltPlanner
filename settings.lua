@@ -1,0 +1,19 @@
+-- Settings stage. Runs before data.lua.
+--
+-- Setting names are a single global namespace shared by every mod, so prefix them with the mod
+-- name. Where the value can be read depends only on `setting_type`:
+--   "startup"            -> settings.startup[name].value, data stage and control stage
+--   "runtime-global"     -> settings.global[name].value, control stage only
+--   "runtime-per-user"   -> settings.get_player_settings(player)[name].value, control stage only
+--
+-- Every setting needs matching [mod-setting-name] / [mod-setting-description] locale entries.
+
+-- data:extend({
+--   {
+--     type = "bool-setting",
+--     name = "ShoterBeltPlanner-example",
+--     setting_type = "runtime-per-user",
+--     default_value = true,
+--     order = "a",
+--   },
+-- })
