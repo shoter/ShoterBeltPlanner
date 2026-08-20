@@ -22,6 +22,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# A caller running under -WhatIf (publish_local.ps1) would otherwise inherit the preference
+# into here and skip the staging copies while still writing the zip. Building only ever
+# touches ./dist, so there is nothing to preview: always do it for real.
+$WhatIfPreference = $false
+
 # --------------------------------------------------------------------------
 # Ignore lists - names or wildcard patterns, matched against the path relative
 # to the repository root (using '/' as separator) and against the item name.
@@ -129,7 +134,7 @@ try {
         Remove-Item -LiteralPath $zipPath -Force
     }
 
-    Compress-Archive -Path $stagingMod -DestinationPath $zipPath -CompressionLevel Optimal
+    Compress-Archive -Path $stagingMod -DestinationPath $zipPath -CompressionLevel Optimal -Force
 
     $sizeKb = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1KB, 1)
     Write-Host "Created dist/$zipName ($sizeKb KB)" -ForegroundColor Green
