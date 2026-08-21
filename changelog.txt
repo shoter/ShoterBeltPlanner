@@ -54,6 +54,12 @@ Date: 2026-08-21
       surveyed as its own band. Measured over a 483-tile corner, 16.6ms fell to 2.3ms, which
       matters because the preview re-plans every time the pointer crosses a tile and a tick is
       16.7ms.
+    - Fixed the preview giving up once the cursor was far from the player. The invisible probes the
+      tool uses to find the pointer were laid out around the character, so past roughly eighty
+      tiles there was nothing to track and the preview simply stopped. The block now follows the
+      pointer instead, is wider, and moves on before the pointer can reach its edge.
+    - A run the tool cannot plan now says why, at the cursor, while you are still pointing. It used
+      to just draw nothing, which looks the same as the tool being broken.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.

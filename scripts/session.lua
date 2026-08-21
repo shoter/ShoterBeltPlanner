@@ -145,17 +145,21 @@ function session.update_preview(player)
 
   if last and last.x == tile.x and last.y == tile.y then return end
 
-  local resolved = geometry.resolve(anchor, tile)
+  local resolved, unresolved = geometry.resolve(anchor, tile)
   if not resolved then
     preview.render(player, pdata, anchor)
+    preview.show_problem(player, pdata, tile, unresolved)
     pdata.preview_tile = tile
     return
   end
 
   local options = options_for(player, pdata)
-  local result, _, blockers = plan.build(player.surface, player.force, anchor, resolved, options)
+  local result, failure, blockers = plan.build(player.surface, player.force, anchor, resolved, options)
 
   preview.render(player, pdata, anchor, resolved, result, blockers)
+  if not result then
+    preview.show_problem(player, pdata, tile, failure)
+  end
   pdata.preview_tile = tile
 end
 

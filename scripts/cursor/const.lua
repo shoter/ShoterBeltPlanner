@@ -19,11 +19,17 @@ const.SUBDIVISIONS = 2
 const.MIN_POW      = 0   -- 2^0 = one tile
 const.MAX_POW      = 5   -- 2^5 = 32 tiles per root probe
 
--- Roots are seeded as a ROOT_SPAN x ROOT_SPAN block centred on the player, so 5
--- covers 160x160 tiles - well past anything on screen - for 25 entities.
--- Re-seeded once the player has walked RESEED_DISTANCE from the block's centre.
-const.ROOT_SPAN        = 5
+-- Roots are a ROOT_SPAN x ROOT_SPAN block, so 7 covers 224x224 tiles for 49
+-- entities. The block follows the POINTER, not the player: anchoring it to the
+-- character meant the preview simply stopped once the cursor was more than about
+-- eighty tiles away, which is well within what a zoomed-out screen shows.
+--
+-- It is re-centred before the pointer can reach the edge rather than after, so
+-- there is never a gap where nothing is tracked. RECENTRE_DISTANCE is measured
+-- from the block's centre and leaves at least one whole root cell of margin.
+const.ROOT_SPAN        = 7
 const.RESEED_DISTANCE  = 32
+const.RECENTRE_DISTANCE = (math.floor(const.ROOT_SPAN / 2) - 1) * (const.SUBDIVISIONS ^ const.MAX_POW)
 
 -- A negative power would make a name like "...-tracker--1"; spell it "m1".
 local function level_name(pow)

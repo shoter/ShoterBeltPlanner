@@ -218,6 +218,25 @@ function preview.render(player, pdata, anchor, resolved, result, blockers)
   })
 end
 
+--- Say, at the cursor, why nothing can be drawn.
+---
+--- Without this a refused plan looks exactly like a broken tool: the belts
+--- simply stop appearing and nothing explains it. Appends to the current render
+--- set, so it is cleared with everything else on the next refresh.
+function preview.show_problem(player, pdata, tile, message)
+  if not (tile and message) then return end
+
+  store(pdata, rendering.draw_text {
+    text = message,
+    target = { tile.x + 0.5, tile.y - 0.8 },
+    color = BLOCKER_COLOUR,
+    scale = 0.7,
+    alignment = "center",
+    surface = player.surface,
+    players = { player },
+  })
+end
+
 --- Live feedback for the opening drag.
 ---
 --- Factorio raises no event at all while a selection is being dragged, so

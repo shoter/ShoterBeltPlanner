@@ -102,6 +102,24 @@ function selftest.run()
   check("zero length is refused", geometry.resolve(anchor, { x = BX, y = BY }) == nil)
 
   ----------------------------------------------------------------------------
+  line("--- cursor tracker geometry ---")
+
+  -- The probe block follows the pointer and is re-centred before the pointer can
+  -- reach its edge. If the trigger distance ever creeps out to the edge itself
+  -- there is a gap with nothing tracked; if it reaches zero the block re-seeds on
+  -- every movement. Both are silent, so the margin is pinned here.
+  local root = cursor_const.root
+  local half_span = (cursor_const.ROOT_SPAN / 2) * root.size
+  local margin = half_span - cursor_const.RECENTRE_DISTANCE
+
+  check("re-centring happens before the pointer reaches the edge",
+    cursor_const.RECENTRE_DISTANCE > 0 and margin >= root.size,
+    string.format("half-span %.0f, re-centre at %.0f, margin %.0f, root %.0f",
+      half_span, cursor_const.RECENTRE_DISTANCE, margin, root.size))
+  check("the tracked block is wider than a zoomed-out screen",
+    half_span * 2 >= 200, string.format("%.0f tiles across", half_span * 2))
+
+  ----------------------------------------------------------------------------
   line("--- clear ground ---")
 
   local result, failure = plan.build(surface, force, anchor, resolved, options)

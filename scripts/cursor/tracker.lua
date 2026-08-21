@@ -94,15 +94,15 @@ local function destroy_all_probes(pdata)
   pdata.probes = {}
 end
 
--- Roots tile a fixed block around the player. Everything deeper is created on
--- demand by the descent, so this is the only placement that has to guess where
--- the player might point.
-local function seed_roots(pdata, player)
+-- Roots tile a block around `centre`, which is the pointer once it is known and
+-- the player only until then. Everything deeper is created on demand by the
+-- descent, so this is the only placement that has to guess where to look.
+local function seed_roots(pdata, player, centre)
   local level = const.root
   local size = level.size
   local surface = player.surface
   local force = ensure_force()
-  local origin = player.position
+  local origin = centre or player.position
 
   local base_x = floor(origin.x / size)
   local base_y = floor(origin.y / size)
@@ -213,7 +213,18 @@ function tracker.on_selected_entity_changed(event)
   if not player then return end
 
   local selected = player.selected
-  if not (selected and selected.valid) then return end
+  if not (selected and selected.valid) then
+    -- Nothing under the cursor at all. Usually a GUI or the map edge, but it
+    -- also means the pointer has left the tracked block - after a jump the
+    -- proactive re-centring cannot have seen. Re-seed on the last place we knew
+    -- about, rate-limited so hovering a window does not thrash it.
+    if pdata.position and (event.tick - (pdata.recovered_tick or 0)) > 30 then
+      pdata.recovered_tick = event.tick
+      destroy_all_probes(pdata)
+      seed_roots(pdata, player, pdata.position)
+    end
+    return
+  end
 
   local level = const.by_name[selected.name]
   if not level then return end -- a real world entity, nothing to do
@@ -222,6 +233,18 @@ function tracker.on_selected_entity_changed(event)
     local centre = selected.position
     pdata.position = { x = centre.x, y = centre.y }
     pdata.tile = { x = floor(centre.x), y = floor(centre.y) }
+
+    -- Move the block along before the pointer can run off the edge of it. Doing
+    -- this on the way out rather than after the fact means there is never a
+    -- moment with nothing under the cursor to track.
+    local anchor = pdata.root_center
+    if anchor then
+      local limit = const.RECENTRE_DISTANCE
+      if math.abs(centre.x - anchor.x) > limit or math.abs(centre.y - anchor.y) > limit then
+        destroy_all_probes(pdata)
+        seed_roots(pdata, player, centre)
+      end
+    end
     -- How many ticks this descent took, counted from the first non-leaf hit.
     -- Zero means the pointer moved within one leaf's parent and landed straight
     -- on a sibling that already existed.
