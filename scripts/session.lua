@@ -18,6 +18,7 @@
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
+local qualities = require("scripts/qualities")
 local plan = require("scripts/logic/plan")
 local place = require("scripts/logic/place")
 local preview = require("scripts/preview")
@@ -78,6 +79,11 @@ local function options_for(player, pdata)
     -- cliffs up is the planner's decision, not this one's, so an early tick of
     -- the switch cannot order something the robots would ignore.
     clear_cliffs = pdata.clear_cliffs or false,
+    -- The quality the ghosts are placed at. Nil is "normal", which is what every
+    -- ghost got before this choice existed, so a save from then needs no
+    -- migration; a name that no longer exists (its mod was removed) falls back
+    -- the same way rather than asking create_entity for something unknown.
+    quality = session.quality_of(pdata).name,
   }
 end
 
@@ -115,6 +121,57 @@ function session.cycle_belt(player)
     create_at_cursor = true,
   }
   session.set_belt(player, chosen.belt)
+end
+
+--------------------------------------------------------------------------------
+-- quality
+
+--- The quality record the player's choice resolves to. Always a real,
+--- selectable quality: see the note in options_for.
+function session.quality_of(pdata)
+  return qualities.get(pdata.quality) or qualities.default()
+end
+
+--- Choose a quality by prototype name.
+function session.set_quality(player, quality_name)
+  local quality = qualities.get(quality_name)
+  if not quality then return end
+
+  local pdata = session.get(player.index)
+  pdata.quality = quality.name
+  player.play_sound { path = "utility/list_box_click" }
+
+  -- The preview is planned from this, so it is now out of date.
+  pdata.preview_tile = nil
+  session.update_preview(player)
+end
+
+--- Step one quality up (step = 1) or down (step = -1), wrapping round.
+---
+--- Does nothing at all when there is only one quality to choose from: the
+--- hotkeys are linked to the vanilla quality-cycling controls, which exist
+--- whether or not quality is in play, and on an install without it the tool
+--- must stay exactly as silent as it was.
+function session.cycle_quality(player, step)
+  if not qualities.selectable() then return end
+
+  local pdata = session.get(player.index)
+  local order = qualities.all()
+  local current = session.quality_of(pdata).name
+  local index = 1
+  for i, quality in ipairs(order) do
+    if quality.name == current then
+      index = i
+      break
+    end
+  end
+
+  local chosen = order[((index - 1 + step) % #order) + 1]
+  player.create_local_flying_text {
+    text = { "beltplanner.quality-chosen", chosen.localised_name },
+    create_at_cursor = true,
+  }
+  session.set_quality(player, chosen.name)
 end
 
 --------------------------------------------------------------------------------

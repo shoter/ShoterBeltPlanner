@@ -6,6 +6,7 @@ local geometry = require("scripts/geometry")
 local plan = require("scripts/logic/plan")
 local place = require("scripts/logic/place")
 local belts = require("scripts/belts")
+local qualities = require("scripts/qualities")
 local cursor_const = require("scripts/cursor/const")
 local tracker = require("scripts/cursor/tracker")
 
@@ -994,6 +995,165 @@ function selftest.run()
   check("next anchor keeps the width", next_anchor.lanes == 3)
   check("next anchor sits at the far end", next_anchor.tile.x == BX + 9,
     "got " .. tostring(next_anchor.tile.x))
+
+  ----------------------------------------------------------------------------
+  line("--- quality ---")
+
+  -- Every ghost used to come out normal because nothing ever passed a quality.
+  -- The choice now travels options -> spec -> create_entity, and a ghost already
+  -- sitting on a tile at the wrong quality has to be replaced the way a wrong
+  -- tier is, or changing quality mid-chain would strand one tile of the old
+  -- quality in the middle of the new run.
+  local normal = qualities.default()
+  check("normal is the default quality", normal ~= nil and normal.name == "normal",
+    tostring(normal and normal.name))
+
+  -- "normal" is the one hidden quality that must still be there: the base game
+  -- hides it and the quality mod unhides it, and either way it is the default.
+  local offers_hidden, hidden_name = false, ""
+  for _, quality in ipairs(qualities.all()) do
+    if quality.name ~= "normal" and prototypes.quality[quality.name].hidden then
+      offers_hidden, hidden_name = true, quality.name
+    end
+  end
+  check("hidden qualities other than normal are never offered", not offers_hidden, hidden_name)
+  check("a choice is offered only when there is more than one",
+    qualities.selectable() == (#qualities.all() > 1),
+    tostring(#qualities.all()) .. " selectable")
+
+  local function ghost_at(x, y)
+    -- find_entities_filtered, not find_entity: a bare name in find_entity means
+    -- normal quality only, and these tests exist to look at ghosts that are not.
+    return surface.find_entities_filtered {
+      position = { x + 0.5, y + 0.5 }, name = "entity-ghost", limit = 1,
+    }[1]
+  end
+
+  --- The one quality every spec of this kind carries, and whether they all agree.
+  local function spec_quality(specs, kind)
+    local seen, uniform = nil, true
+    for _, spec in ipairs(specs) do
+      if spec.kind == kind then
+        if seen == nil then
+          seen = spec.quality
+        elseif spec.quality ~= seen then
+          uniform = false
+        end
+      end
+    end
+    return seen, uniform
+  end
+
+  local function clear_ghosts(x1, y1, x2, y2)
+    for _, ghost in pairs(surface.find_entities_filtered {
+      area = { { x1, y1 }, { x2, y2 } }, name = "entity-ghost",
+    }) do
+      ghost.destroy()
+    end
+  end
+
+  local normal_options = { tier = tier, landfill = true, max_tiles = 10000, quality = "normal" }
+
+  -- A tile has no quality, so the landfill spec must not carry one even when the
+  -- belts around it do. Checked before any ghost goes down, on a single tile of
+  -- water dropped into the run and taken out again afterwards.
+  local ground = surface.get_tile(BX + 4, BY + 1).name
+  surface.set_tiles({ { name = "water", position = { BX + 4, BY + 1 } } })
+  local wet_result, wet_reason = plan.build(surface, force, anchor, resolved, normal_options)
+  check("a run over water plans with a quality given", wet_result ~= nil,
+    tostring(wet_reason and wet_reason[1]))
+  if wet_result then
+    local tally = count_kinds(wet_result.specs)
+    check("one landfill spec for the water tile", tally.landfill == 1, "got " .. tostring(tally.landfill))
+    local landfill_quality = spec_quality(wet_result.specs, "landfill")
+    check("a landfill spec carries no quality", landfill_quality == nil, tostring(landfill_quality))
+  end
+  surface.set_tiles({ { name = ground, position = { BX + 4, BY + 1 } } })
+
+  local normal_result, normal_reason = plan.build(surface, force, anchor, resolved, normal_options)
+  check("plan succeeds with a quality given", normal_result ~= nil,
+    tostring(normal_reason and normal_reason[1]))
+  if normal_result then
+    local carried, uniform = spec_quality(normal_result.specs, "belt")
+    check("every belt spec carries the chosen quality", carried == "normal" and uniform,
+      tostring(carried))
+    check("the result echoes the quality for the preview label",
+      normal_result.quality == "normal", tostring(normal_result.quality))
+
+    place.execute(surface, force, nil, normal_result.specs)
+    local ghost = ghost_at(BX, BY)
+    check("a ghost is placed at the head of the run", ghost ~= nil)
+    check("the ghost is normal quality", ghost ~= nil and ghost.quality.name == "normal",
+      tostring(ghost and ghost.quality.name))
+  end
+
+  -- The other half needs a second quality, which only Space Age or a quality
+  -- mod provides. A base-only install skips it rather than failing.
+  local other
+  for _, quality in ipairs(qualities.all()) do
+    if quality.name ~= "normal" then
+      other = other or quality
+    end
+  end
+
+  if other and normal_result then
+    local other_options = { tier = tier, landfill = false, max_tiles = 10000, quality = other.name }
+    local other_result, other_reason = plan.build(surface, force, anchor, resolved, other_options)
+    check("plan succeeds at " .. other.name, other_result ~= nil,
+      tostring(other_reason and other_reason[1]))
+
+    if other_result then
+      local carried, uniform = spec_quality(other_result.specs, "belt")
+      check("belt specs carry the other quality", carried == other.name and uniform,
+        tostring(carried))
+
+      -- Over the normal run just placed: every tile already holds our own belt
+      -- ghost at the wrong quality, so every one must be replaced.
+      local created = place.execute(surface, force, nil, other_result.specs)
+      check("every tile is replaced, not kept", created == 30, "got " .. tostring(created))
+
+      local ghost = ghost_at(BX, BY)
+      check("the head ghost now has the other quality",
+        ghost ~= nil and ghost.quality.name == other.name,
+        tostring(ghost and ghost.quality.name))
+      local on_tile = surface.find_entities_filtered {
+        area = { { BX, BY }, { BX + 1, BY + 1 } }, name = "entity-ghost",
+      }
+      check("one ghost on the tile after the replacement", #on_tile == 1, "got " .. #on_tile)
+
+      local again = place.execute(surface, force, nil, other_result.specs)
+      check("the same run at the same quality places nothing new", again == 0,
+        "got " .. tostring(again))
+    end
+
+    -- Splitters are entity ghosts too, so they take the quality as well.
+    if pair then
+      local straight = geometry.resolve(pair, { x = BX + 9, y = BY + 20 })
+      local split_quality = {
+        tier = tier, landfill = false, max_tiles = 10000, splitters = true, quality = other.name,
+      }
+      local split_result, split_reason = plan.build(surface, force, pair, straight, split_quality)
+      check("a split run plans at " .. other.name, split_result ~= nil,
+        tostring(split_reason and split_reason[1]))
+      if split_result then
+        local carried = spec_quality(split_result.specs, "splitter")
+        check("the splitter spec carries the quality", carried == other.name, tostring(carried))
+
+        place.execute(surface, force, nil, split_result.specs)
+        local splitter_ghost = surface.find_entities_filtered {
+          position = { BX + 9.5, BY + 21 }, name = "entity-ghost", limit = 1,
+        }[1]
+        check("the splitter ghost has the quality",
+          splitter_ghost ~= nil and splitter_ghost.quality.name == other.name,
+          tostring(splitter_ghost and splitter_ghost.quality.name))
+      end
+      clear_ghosts(BX - 2, BY + 18, BX + 14, BY + 24)
+    end
+  else
+    line("  SKIP  only one selectable quality here; replacement by quality is not exercised")
+  end
+
+  clear_ghosts(BX - 2, BY - 2, BX + 14, BY + 6)
 
   line("=== %d passed, %d failed ===", passed, failed)
 

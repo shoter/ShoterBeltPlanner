@@ -349,6 +349,7 @@ local function plan_run(context, run, water, occupants, specs, blockers)
       name = context.tier.belt,
       position = centre(tile),
       direction = direction,
+      quality = context.quality,
     }
   end
 
@@ -412,6 +413,7 @@ local function apply_splitters(anchor, resolved, context, specs)
       -- rather than on either tile.
       position = { x = (a.x + b.x) / 2 + 0.5, y = (a.y + b.y) / 2 + 0.5 },
       direction = context.splitter_direction,
+      quality = context.quality,
     }
   end
 
@@ -439,8 +441,8 @@ end
 --- Build the full spec list for a run.
 ---
 --- `options` carries { tier, landfill, clear_built, clear_cliffs, max_tiles,
---- splitters }. Returns { specs, blockers, cost } or nil plus a LocalisedString
---- and the blocking tiles.
+--- splitters, quality }. Returns { specs, blockers, cost, quality } or nil plus a
+--- LocalisedString and the blocking tiles.
 function plan.build(surface, force, anchor, resolved, options)
   local tier = options.tier or belts.default()
   if not tier then
@@ -461,6 +463,9 @@ function plan.build(surface, force, anchor, resolved, options)
     landfill = options.landfill,
     clear_built = options.clear_built or false,
     clear_cliffs = options.clear_cliffs and plan.can_clear_cliffs(force) or false,
+    -- Only entity ghosts carry this. Landfill is a tile ghost, and tiles have
+    -- no quality, so the landfill spec never gets it.
+    quality = options.quality,
     seen = {},
   }
 
@@ -501,7 +506,10 @@ function plan.build(surface, force, anchor, resolved, options)
     specs = replaced
   end
 
-  return { specs = specs, blockers = blockers, cost = cost }
+  -- quality is echoed back so the preview labels what the specs will actually be
+  -- placed at, rather than re-reading the player's choice and risking the two
+  -- drifting apart.
+  return { specs = specs, blockers = blockers, cost = cost, quality = context.quality }
 end
 
 return plan

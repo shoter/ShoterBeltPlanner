@@ -192,6 +192,29 @@ script.on_event(defines.events.on_research_finished, on_research_changed)
 script.on_event(defines.events.on_research_reversed, on_research_changed)
 
 --------------------------------------------------------------------------------
+-- quality
+
+-- Linked to the vanilla quality-cycling controls (Alt + mouse wheel by default),
+-- so the gesture that changes the quality of a ghost in hand also changes the
+-- quality this tool places at. Gated on holding the tool like every other
+-- hotkey: the controls fire on every scroll in the game. On an install with a
+-- single quality session.cycle_quality does nothing, so the tool stays silent.
+local function on_cycle_quality(event, step)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+  session.cycle_quality(player, step)
+  planner_gui.refresh(player)
+end
+
+script.on_event("beltplanner-cycle-quality-up", function(event)
+  on_cycle_quality(event, 1)
+end)
+
+script.on_event("beltplanner-cycle-quality-down", function(event)
+  on_cycle_quality(event, -1)
+end)
+
+--------------------------------------------------------------------------------
 -- teardown
 
 local function forget_player(event)
