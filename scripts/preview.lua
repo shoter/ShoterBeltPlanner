@@ -1,8 +1,8 @@
 -- Everything the player sees that is not an entity.
 --
 -- The preview is drawn from the SAME spec list that place.lua commits, so what
--- is on screen is what will be built - including where the tunnels go and which
--- tiles get landfill.
+-- is on screen is what will be built - including what will be cleared out of the
+-- way and which tiles get landfill.
 --
 -- Render objects are stored per player and destroyed explicitly: a
 -- position-targeted render outlives whatever created it, so a session that ends

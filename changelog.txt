@@ -6,8 +6,6 @@ Date: 2026-08-21
       wide it is, then click to run belts to that point. Each click continues from where the last
       one ended.
     - Builds several lanes in parallel, preserving the spacing of the opening drag.
-    - Bridges obstacles with an underground pair that spans exactly the obstacle and no further. An
-      obstacle too long for the chosen belt is refused rather than approximated.
     - Optional landfill over water, placed as tile ghosts, so water is never modified directly.
     - Belts can be built against their transport direction, from the destination back to the source.
     - Everything one click places goes into a single undo item, so one press of undo removes the
@@ -28,6 +26,19 @@ Date: 2026-08-21
       the tunnels, the clearing - behaves exactly as it would have. The bundle has to be an even
       number of lanes wide and the run straight, and both are refused rather than approximated.
     - Shift+B steps through the belt tiers without leaving the tool.
+  Changes:
+    - Automatic tunnelling is gone. Choosing how long an underground should be is a guess about
+      what the player wanted, and not guessing is the point of this tool, so anything in the way
+      now stops the run and says what it was. Placing an underground deliberately will come back
+      as its own gesture, the way splitters did.
+    - Whether your own buildings may be cleared out of the way is a switch in the tool window and
+      nothing else; holding Control no longer does it. A held modifier cannot be read while the
+      pointer is only hovering, so the preview could not show what the click was about to do, and
+      for something that marks your factory for deconstruction that is the wrong way round. With
+      the switch off, a run that meets one of your buildings is refused and names it. Trees and
+      rocks are still always cleared.
+    - A refused run now marks every offending tile, not just the first one found. Showing one
+      blocked tile while the others sat unmarked read as though clearing that one would fix it.
   Bugfixes:
     - Fixed a second run over the first being refused, and the planner then trying to tunnel under
       its own belts. The cursor probes were being surveyed as obstructions, which forced a

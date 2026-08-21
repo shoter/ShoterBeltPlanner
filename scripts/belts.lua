@@ -48,7 +48,11 @@ local function build()
         item = items[1].name,
         speed = proto.belt_speed,
         underground = underground and underground.name or nil,
-        -- How far apart the two ends of a pair may sit, in tiles.
+        -- Nothing places these yet: automatic tunnelling was removed because
+        -- choosing an underground's length for the player is exactly the kind of
+        -- guess this tool refuses to make. They are still resolved here, because
+        -- a manual "put an underground here" gesture will want them and
+        -- re-deriving the pairing later is pointless work.
         max_distance = underground and underground.max_underground_distance or nil,
         splitter = splitter_by_speed[speed_key(proto.belt_speed)],
       }
@@ -85,14 +89,6 @@ end
 --- The slowest tier, used as the default before the player has chosen.
 function belts.default()
   return get().order[1]
-end
-
---- True when this tier can bridge a gap of `gap` blocked tiles: the pair needs
---- one tile for the entry and one for the exit, and the engine measures
---- max_distance between the two ends.
-function belts.can_span(tier, gap)
-  if not (tier and tier.underground and tier.max_distance) then return false end
-  return (gap + 1) <= tier.max_distance
 end
 
 --- Invalidate the cache. Only needed if something reloads prototypes mid-session,

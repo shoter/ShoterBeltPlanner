@@ -38,39 +38,28 @@ end
 --- setting at all - the settings stage runs before any prototype exists, so
 --- there is nothing to build an allowed_values list from.
 function session.ensure_defaults(player, pdata)
-  if pdata.tunnels ~= nil then return end
+  if pdata.landfill ~= nil then return end
 
   local per_user = settings.get_player_settings(player)
-  pdata.tunnels = per_user["beltplanner-use-tunnels"].value
   pdata.landfill = per_user["beltplanner-use-landfill"].value
   pdata.clear_built = false
 end
 
-local function options_for(player, pdata, ctrl)
+local function options_for(player, pdata)
   session.ensure_defaults(player, pdata)
 
   return {
     tier = (pdata.tier and belts.get(pdata.tier)) or belts.default(),
     landfill = pdata.landfill,
-    tunnels = pdata.tunnels,
     max_tiles = settings.global["beltplanner-max-tiles"].value,
-    -- Ctrl is a momentary override on top of the sticky switch, so holding it
-    -- clears buildings for this one click without changing the setting.
-    clear_built = pdata.clear_built or ctrl or false,
+    -- Whether the player's own buildings may be cleared is a switch in the tool
+    -- window and nothing else. It used to also be a held modifier, but a
+    -- modifier cannot be read while the pointer is merely hovering, so the
+    -- preview could not show what the click was going to do -- which for
+    -- something that marks your factory for deconstruction is the wrong way
+    -- round.
+    clear_built = pdata.clear_built or false,
   }
-end
-
--- How long a mouse-down counts for. The selection event arrives on release, so
--- this only has to outlive a click, not a whole drag.
-local CTRL_GRACE_TICKS = 120
-
---- Was Ctrl held for the click we are handling?
----
---- Selection events carry no modifier information at all, so this is recovered
---- from a custom input bound to CONTROL + mouse-button-1, which fires on the
---- press that precedes the release we are reacting to.
-local function ctrl_held(pdata)
-  return pdata.ctrl_tick ~= nil and (game.tick - pdata.ctrl_tick) <= CTRL_GRACE_TICKS
 end
 
 --- Choose a belt tier by prototype name.
@@ -177,7 +166,6 @@ function session.cancel(player, quiet)
   pdata.anchor = nil
   pdata.preview_tile = nil
   pdata.drag_from = nil
-  pdata.ctrl_tick = nil
 
   if had_anchor and not quiet then
     player.create_local_flying_text { text = { "beltplanner.cancelled" }, create_at_cursor = true }
@@ -253,9 +241,7 @@ local function commit(player, pdata, area, splitters)
     return
   end
 
-  -- Ctrl on the click that opened this selection means "clear whatever I built
-  -- that is in the way too", not just trees and rocks.
-  local options = options_for(player, pdata, ctrl_held(pdata))
+  local options = options_for(player, pdata)
   options.splitters = splitters
   local result, failure, blockers = plan.build(player.surface, player.force, anchor, resolved, options)
 
@@ -284,13 +270,10 @@ end
 
 --- Mouse-down while the tool is held.
 ---
---- This exists because Factorio raises nothing during a drag: without the press
---- we would know neither where the opening drag began nor whether Ctrl was
---- down, since selection events carry no modifier information.
-function session.on_press(player, position, ctrl)
+--- This exists because Factorio raises nothing during a drag, so without the
+--- press there is no way to know where the opening drag began.
+function session.on_press(player, position)
   local pdata = session.get(player.index)
-
-  pdata.ctrl_tick = ctrl and game.tick or nil
 
   if not pdata.anchor and position then
     local from = { x = math.floor(position.x), y = math.floor(position.y) }
@@ -325,8 +308,8 @@ end
 --- Finish the run with a row of splitters instead of belts.
 ---
 --- Otherwise identical to an ordinary commit, so the belts leading up to the
---- splitters, the tunnels and the clearing all behave exactly as they would
---- have; only the last tile of the run changes.
+--- splitters and the clearing all behave exactly as they would have; only the
+--- last tile of the run changes.
 function session.on_splitter(player, area)
   local pdata = session.get(player.index)
   pdata.drag_from = nil

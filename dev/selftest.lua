@@ -73,7 +73,7 @@ function selftest.run()
   local tier = belts.default()
   line("=== planner self-test (tier %s, max_distance %s) ===", tier.belt, tostring(tier.max_distance))
 
-  local options = { tier = tier, tunnels = true, landfill = false, max_tiles = 10000 }
+  local options = { tier = tier, landfill = false, max_tiles = 10000 }
 
   ----------------------------------------------------------------------------
   line("--- geometry ---")
@@ -149,8 +149,10 @@ function selftest.run()
   anchor.reversed = false
 
   ----------------------------------------------------------------------------
-  line("--- one obstacle: tunnel spans exactly it ---")
+  line("--- your own buildings stop the run ---")
 
+  -- Nothing is tunnelled under any more, and nothing the player built is
+  -- removed unasked, so a chest on the line refuses rather than being bridged.
   local obstacles = {}
   for lane = 0, 2 do
     obstacles[#obstacles + 1] = surface.create_entity {
@@ -158,77 +160,40 @@ function selftest.run()
     }
   end
 
-  result, failure = plan.build(surface, force, anchor, resolved, options)
-  check("plan succeeds over a 1-tile obstacle", result ~= nil, tostring(failure and failure[1]))
-  if result then
-    local tally = count_kinds(result.specs)
-    check("6 underground ends (2 per lane)", tally.underground == 6, "got " .. tostring(tally.underground))
-    -- 30 tiles, 3 blocked, so 27 buildable; 6 of those become underground ends.
-    check("21 plain belts", tally.belt == 21, "got " .. tostring(tally.belt))
+  local guarded, guarded_reason, guarded_tiles = plan.build(surface, force, anchor, resolved, options)
+  check("a building of your own refuses the run", guarded == nil)
+  check("refusal names your own building",
+    guarded_reason and guarded_reason[1] == "beltplanner.error-own-structure",
+    tostring(guarded_reason and guarded_reason[1]))
+  check("every offending tile is reported, not just the first",
+    guarded_tiles ~= nil and #guarded_tiles == 3, "got " .. tostring(guarded_tiles and #guarded_tiles))
 
-    local ends = {}
-    for _, spec in ipairs(result.specs) do
-      if spec.kind == "underground" then ends[#ends + 1] = spec end
-    end
-    check("entry is input, exit is output",
-      ends[1].type == "input" and ends[2].type == "output",
-      string.format("got %s,%s", tostring(ends[1].type), tostring(ends[2].type)))
-    check("entry sits just before the obstacle", ends[1].position.x == BX + 3.5,
-      "got " .. tostring(ends[1].position.x))
-    check("exit sits just after the obstacle", ends[2].position.x == BX + 5.5,
-      "got " .. tostring(ends[2].position.x))
+  local cleared_options = { tier = tier, landfill = false, max_tiles = 10000, clear_built = true }
+  local cleared, cleared_reason = plan.build(surface, force, anchor, resolved, cleared_options)
+  check("switching the option on clears it instead", cleared ~= nil,
+    tostring(cleared_reason and cleared_reason[1]))
+  if cleared then
+    local tally = count_kinds(cleared.specs)
+    check("three chests marked for removal", tally.deconstruct == 3, "got " .. tostring(tally.deconstruct))
+    check("no tunnel is invented", tally.underground == nil, "got " .. tostring(tally.underground))
+    check("all 30 tiles get belt", tally.belt == 30, "got " .. tostring(tally.belt))
   end
-
-  line("--- reversed over an obstacle puts the entrance on the far side ---")
-  anchor.reversed = true
-  local rev = plan.build(surface, force, anchor, resolved, options)
-  if rev then
-    local ends = {}
-    for _, spec in ipairs(rev.specs) do
-      if spec.kind == "underground" then ends[#ends + 1] = spec end
-    end
-    -- Tiles are walked in FLOW order, so the first end met is always the
-    -- entrance whichever way the run was drawn. Flowing west, that is the tile
-    -- east of the obstacle.
-    check("reversed: first end is still the entrance", ends[1].type == "input",
-      "got " .. tostring(ends[1].type))
-    check("reversed: entrance is east of the obstacle", ends[1].position.x == BX + 5.5,
-      "got " .. tostring(ends[1].position.x))
-    check("reversed: exit is west of the obstacle", ends[2].position.x == BX + 3.5,
-      "got " .. tostring(ends[2].position.x))
-  else
-    check("reversed obstacle plan succeeds", false)
-  end
-  anchor.reversed = false
-
-  line("--- tunnelling disabled refuses instead of guessing ---")
-  local no_tunnel = { tier = tier, tunnels = false, landfill = false, max_tiles = 10000 }
-  local blocked_result, blocked_reason, blocked_tiles = plan.build(surface, force, anchor, resolved, no_tunnel)
-  check("refused when tunnels are off", blocked_result == nil)
-  check("refusal names the blocked tiles", blocked_tiles ~= nil and #blocked_tiles > 0)
-  check("refusal reason is error-blocked",
-    blocked_reason and blocked_reason[1] == "beltplanner.error-blocked",
-    tostring(blocked_reason and blocked_reason[1]))
 
   for _, chest in ipairs(obstacles) do if chest.valid then chest.destroy() end end
 
-  ----------------------------------------------------------------------------
-  line("--- obstacle too long to bridge ---")
+  line("--- something that is not yours stops it too ---")
 
-  local wall = {}
-  for step = 0, 5 do
-    wall[#wall + 1] = surface.create_entity {
-      name = "steel-chest", position = { BX + 3.5 + step, BY + 0.5 }, force = force,
-    }
-  end
-
-  local long_result, long_reason = plan.build(surface, force, anchor, resolved, options)
-  check("refused when the obstacle outreaches the belt", long_result == nil)
-  check("refusal reason is error-tunnel-too-long",
-    long_reason and long_reason[1] == "beltplanner.error-tunnel-too-long",
-    tostring(long_reason and long_reason[1]))
-
-  for _, chest in ipairs(wall) do if chest.valid then chest.destroy() end end
+  -- Same obstruction on another force: not clearable whatever the option says,
+  -- and reported as a plain blockage rather than as one of yours.
+  local foreign = surface.create_entity {
+    name = "steel-chest", position = { BX + 4.5, BY + 0.5 }, force = "neutral",
+  }
+  local blocked, blocked_reason = plan.build(surface, force, anchor, resolved, cleared_options)
+  check("a foreign building refuses the run even with clearing on", blocked == nil)
+  check("refusal is a plain blockage",
+    blocked_reason and blocked_reason[1] == "beltplanner.error-blocked",
+    tostring(blocked_reason and blocked_reason[1]))
+  if foreign and foreign.valid then foreign.destroy() end
 
   ----------------------------------------------------------------------------
   line("--- trees are cleared, not refused ---")
@@ -274,29 +239,9 @@ function selftest.run()
   end
 
   ----------------------------------------------------------------------------
-  line("--- player entities need Ctrl ---")
-
-  local chest = surface.create_entity { name = "steel-chest", position = { BX + 4.5, BY + 0.5 }, force = force }
-
-  local guarded = plan.build(surface, force, anchor, resolved,
-    { tier = tier, tunnels = false, landfill = false, max_tiles = 10000 })
-  check("without Ctrl a chest is not cleared", guarded == nil)
-
-  local ctrl_options = { tier = tier, tunnels = false, landfill = false, max_tiles = 10000, clear_built = true }
-  local cleared, cleared_reason = plan.build(surface, force, anchor, resolved, ctrl_options)
-  check("with Ctrl the chest is cleared", cleared ~= nil, tostring(cleared_reason and cleared_reason[1]))
-  if cleared then
-    local tally = count_kinds(cleared.specs)
-    check("chest is marked for removal", (tally.deconstruct or 0) == 1,
-      "got " .. tostring(tally.deconstruct))
-  end
-
-  if chest and chest.valid then chest.destroy() end
-
-  ----------------------------------------------------------------------------
   line("--- budget ---")
 
-  local tiny = { tier = tier, tunnels = true, landfill = false, max_tiles = 5 }
+  local tiny = { tier = tier, landfill = false, max_tiles = 5 }
   local over, over_reason = plan.build(surface, force, anchor, resolved, tiny)
   check("run over the budget is refused", over == nil)
   check("refusal reason is error-too-big",
@@ -418,7 +363,7 @@ function selftest.run()
     "tier " .. tier.belt)
 
   local split_options = {
-    tier = tier, tunnels = true, landfill = false, max_tiles = 10000, splitters = true,
+    tier = tier, landfill = false, max_tiles = 10000, splitters = true,
   }
 
   -- Splitters take a lane pair, so this needs an even bundle of its own.
@@ -506,7 +451,7 @@ function selftest.benchmark(surface, force, tier)
   surface.force_generate_chunk_requests()
   clear_area(surface, BX - 5, BY - 5, BX + LONG + 10, BY + 10)
 
-  local options = { tier = tier, tunnels = true, landfill = false, max_tiles = 100000 }
+  local options = { tier = tier, landfill = false, max_tiles = 100000 }
   local anchor = geometry.anchor_from_area(area(BX, BY, BX + 1, BY + 3))
   local short_run = geometry.resolve(anchor, { x = BX + 9, y = BY })
   local long_run = geometry.resolve(anchor, { x = BX + LONG - 1, y = BY })

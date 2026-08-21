@@ -67,18 +67,22 @@ end
 -- Mouse-down while our tool is held. Gated hard on holding the tool: these are
 -- bound to plain and Ctrl left-click, so they fire on every click in the game
 -- and must do nothing at all the rest of the time.
-local function on_press(event, ctrl)
+--
+-- Both variants do the same thing. The Ctrl one exists only so that a
+-- Ctrl-click still marks where a drag began; the modifier itself no longer
+-- means anything to this tool.
+local function on_press(event)
   -- A click on our own window is still a left-click, and without this it would
   -- arm a drag from wherever the window happens to sit on the map.
   if event.in_gui then return end
 
   local player = game.get_player(event.player_index)
   if not (player and holding_tool(player)) then return end
-  session.on_press(player, event.cursor_position, ctrl)
+  session.on_press(player, event.cursor_position)
 end
 
-script.on_event("beltplanner-press", function(event) on_press(event, false) end)
-script.on_event("beltplanner-ctrl-press", function(event) on_press(event, true) end)
+script.on_event("beltplanner-press", on_press)
+script.on_event("beltplanner-ctrl-press", on_press)
 
 --------------------------------------------------------------------------------
 -- the tool

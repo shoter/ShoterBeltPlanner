@@ -56,8 +56,8 @@ from touching the real `mods` folder.
 
 ## What is and is not covered
 
-The planner is well covered: geometry, corners, tunnelling, clearing, splitters,
-the refusals, and replanning over a run already placed.
+The planner is well covered: geometry, corners, clearing, splitters, every
+refusal, and replanning over a run already placed.
 
 Nothing that draws is covered at all. `--create` produces a map with no player,
 so the GUI and the preview renderer cannot run headlessly — which is how two

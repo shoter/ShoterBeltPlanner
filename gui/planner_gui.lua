@@ -87,7 +87,6 @@ function planner_gui.open(player)
       { type = "label", style = "caption_label", caption = { "beltplanner.gui-belt" } },
       { type = "table", name = "beltplanner_tiers", column_count = 4 },
       { type = "line" },
-      checkbox("tunnels", { "beltplanner.gui-tunnels" }, { "beltplanner.gui-tunnels-tip" }, pdata.tunnels),
       checkbox("landfill", { "beltplanner.gui-landfill" }, { "beltplanner.gui-landfill-tip" }, pdata.landfill),
       checkbox("clear_built", { "beltplanner.gui-clear" }, { "beltplanner.gui-clear-tip" }, pdata.clear_built),
       { type = "line" },

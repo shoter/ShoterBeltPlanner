@@ -4,10 +4,14 @@
 -- the list this produces, so what the player sees is provably what gets built.
 --
 -- The non-smart rule is enforced here. The run never leaves the line the player
--- drew. Where it meets an obstacle, an underground pair spans exactly that
--- obstacle and no further, so the tunnel length is dictated by the world rather
--- than guessed. If the obstacle is too long to bridge, or sits where an entry or
--- exit would have to go, the whole segment is refused rather than approximated.
+-- drew, and nothing is tunnelled under: deciding how long an underground should
+-- be is a guess, and the brief is explicit that guessing is the one thing this
+-- tool must not do. Anything in the way therefore stops the run and says what it
+-- was, leaving the decision with the player.
+--
+-- Trees and rocks are the sole exception, because clearing those is not a guess
+-- about intent. A structure the player built is only ever removed when they have
+-- asked for it.
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
@@ -17,7 +21,9 @@ local plan = {}
 
 local floor, ceil = math.floor, math.ceil
 
-local FREE, WATER, BLOCKED = 1, 2, 3
+-- OWNED is separated from BLOCKED so the refusal can name the one thing the
+-- player can do something about from the tool window.
+local FREE, WATER, BLOCKED, OWNED = 1, 2, 3, 4
 
 -- Types an area query returns that never obstruct a belt. Without this list
 -- their mere presence would condemn a tile.
@@ -87,25 +93,27 @@ local function survey(surface, boxes)
   return water, occupants
 end
 
---- Can this entity simply be ordered away to make room?
+--- What this entity means for the tile it sits on.
 ---
---- Trees and rocks always: that is what stamping a vanilla blueprint does, and
---- nobody means to keep a tree standing where they just asked for a belt.
---- Anything the player built only when they explicitly asked, because clearing
---- someone's machines by accident is not worth one undo.
-local function clearable(entity, context)
+--- "clear" - trees and rocks, always removed: that is what stamping a vanilla
+---   blueprint does, and nobody means to keep a tree standing where they just
+---   asked for a belt.
+--- "own"   - something the player built, with the clearing option switched off.
+---   Reported separately so the refusal can say which switch would fix it.
+--- "block" - anything else. Nothing is tunnelled under, so it simply stops.
+local function verdict_for(entity, context)
   local kind = entity.type
 
-  if kind == "tree" then return true end
+  if kind == "tree" then return "clear" end
   if kind == "simple-entity" and entity.prototype.count_as_rock_for_filtered_deconstruction then
-    return true
+    return "clear"
   end
 
-  if context.clear_built and kind ~= "character" and entity.force.name == context.force_name then
-    return true
+  if kind ~= "character" and entity.force.name == context.force_name then
+    return context.clear_built and "clear" or "own"
   end
 
-  return false
+  return "block"
 end
 
 --- Decide what one tile is, and what would have to go to make it usable.
@@ -127,15 +135,24 @@ local function classify(context, direction, tile, water, occupants)
     return FREE
   end
 
-  local removable, obstructed = {}, false
+  local removable, obstructed, owned = {}, false, false
   for _, entity in ipairs(present) do
     if entity.valid then
-      if clearable(entity, context) then
+      local verdict = verdict_for(entity, context)
+      if verdict == "clear" then
         removable[#removable + 1] = entity
+      elseif verdict == "own" then
+        owned = true
       else
         obstructed = true
       end
     end
+  end
+
+  -- Your own building takes precedence in the reporting: it is the one the
+  -- player can clear with a switch.
+  if owned then
+    return OWNED
   end
 
   if obstructed then
@@ -165,10 +182,6 @@ end
 --- Walk one straight run, emitting specs. Returns false plus a reason if it
 --- cannot be built; a partial run is never emitted, because half a belt is worse
 --- than none.
----
---- Tiles arrive in the order items FLOW along them, so the first end of a tunnel
---- is always the entrance and the second always the exit, whichever way the run
---- was drawn.
 local function plan_run(context, run, water, occupants, specs, blockers)
   local tiles, direction = run.tiles, run.direction
   local states, removals = {}, {}
@@ -193,75 +206,45 @@ local function plan_run(context, run, water, occupants, specs, blockers)
     end
   end
 
-  local count = #tiles
-  local index = 1
-
-  while index <= count do
-    local state = states[index]
-
-    if state ~= BLOCKED then
-      emit_removals(index)
-      if state == WATER then
-        specs[#specs + 1] = {
-          kind = "landfill",
-          name = "landfill",
-          position = centre(tiles[index]),
-        }
-      end
-      specs[#specs + 1] = {
-        kind = "belt",
-        name = context.tier.belt,
-        position = centre(tiles[index]),
-        direction = direction,
-      }
-      index = index + 1
-    else
-      -- Measure the obstacle, then decide whether it can be tunnelled.
-      local first = index
-      local last = index
-      while last < count and states[last + 1] == BLOCKED do
-        last = last + 1
-      end
-      for blocked = first, last do
-        blockers[#blockers + 1] = tiles[blocked]
-      end
-
-      if not context.tunnels then
-        return false, { "beltplanner.error-blocked" }
-      end
-
-      local entry = first - 1
-      local exit = last + 1
-      if entry < 1 or exit > count then
-        -- Nothing to anchor the pair to: the obstacle touches an end of the run.
-        return false, { "beltplanner.error-blocked-at-end" }
-      end
-
-      local gap = last - first + 1
-      if not belts.can_span(context.tier, gap) then
-        return false, { "beltplanner.error-tunnel-too-long", gap, context.tier.max_distance or 0 }
-      end
-
-      -- The belt already emitted on the entry tile becomes the underground
-      -- entrance instead.
-      specs[#specs] = {
-        kind = "underground",
-        name = context.tier.underground,
-        position = centre(tiles[entry]),
-        direction = direction,
-        type = "input",
-      }
-      emit_removals(exit)
-      specs[#specs + 1] = {
-        kind = "underground",
-        name = context.tier.underground,
-        position = centre(tiles[exit]),
-        direction = direction,
-        type = "output",
-      }
-
-      index = exit + 1
+  -- Nothing is tunnelled under and nothing the player built is removed unasked,
+  -- so anything in the way stops the run. Every offending tile is collected
+  -- before refusing, rather than bailing on the first, so the preview can show
+  -- the player all of them at once.
+  local owned, blocked = false, false
+  for index, state in ipairs(states) do
+    if state == OWNED then
+      owned = true
+      blockers[#blockers + 1] = tiles[index]
+    elseif state == BLOCKED then
+      blocked = true
+      blockers[#blockers + 1] = tiles[index]
     end
+  end
+
+  if owned then
+    return false, { "beltplanner.error-own-structure" }
+  end
+  if blocked then
+    return false, { "beltplanner.error-blocked" }
+  end
+
+  for index, tile in ipairs(tiles) do
+    emit_removals(index)
+
+    if states[index] == WATER then
+      specs[#specs + 1] = {
+        kind = "landfill",
+        name = "landfill",
+        position = centre(tile),
+      }
+    end
+
+    specs[#specs + 1] = {
+      kind = "belt",
+      name = context.tier.belt,
+      position = centre(tile),
+      direction = direction,
+    }
   end
 
   return true
@@ -297,7 +280,7 @@ local function apply_splitters(anchor, resolved, context, specs)
   end
 
   -- Drop the belts on those tiles. Landfill and removals there still apply, so
-  -- they are kept; a tunnel mouth cannot also be a splitter, so it refuses.
+  -- they are kept.
   local kept, replaced = {}, {}
   for _, spec in ipairs(specs) do
     local lane = spec.position
@@ -305,8 +288,6 @@ local function apply_splitters(anchor, resolved, context, specs)
 
     if lane and spec.kind == "belt" then
       replaced[lane] = true
-    elseif lane and spec.kind == "underground" then
-      return nil, { "beltplanner.error-splitter-blocked" }
     else
       kept[#kept + 1] = spec
     end
@@ -337,7 +318,7 @@ end
 
 --- Build the full spec list for a run.
 ---
---- `options` carries { tier, landfill, tunnels, clear_built, max_tiles }.
+--- `options` carries { tier, landfill, clear_built, max_tiles, splitters }.
 --- Returns { specs, blockers, cost } or nil plus a LocalisedString and the
 --- blocking tiles.
 function plan.build(surface, force, anchor, resolved, options)
@@ -358,7 +339,6 @@ function plan.build(surface, force, anchor, resolved, options)
     force_name = type(force) == "string" and force or force.name,
     tier = tier,
     landfill = options.landfill,
-    tunnels = options.tunnels,
     clear_built = options.clear_built or false,
     seen = {},
   }
@@ -367,15 +347,23 @@ function plan.build(surface, force, anchor, resolved, options)
 
   local specs, blockers = {}, {}
 
+  -- Every lane is walked even once one has failed. The specs are thrown away,
+  -- but the blockers are not: the preview paints them, and showing only the
+  -- first lane's obstruction while the others sit there unmarked reads as though
+  -- clearing that one tile would fix it.
+  local failure
   for lane = 1, anchor.lanes do
-    -- A corner splits a lane into two straight runs, which is also what keeps a
-    -- tunnel from being dug across the bend: each run is planned on its own.
+    -- A corner splits a lane into two straight runs, each with its own facing.
     for _, run in ipairs(geometry.lane_runs(anchor, resolved, lane)) do
       local ok, reason = plan_run(context, run, water, occupants, specs, blockers)
       if not ok then
-        return nil, reason, blockers
+        failure = failure or reason
       end
     end
+  end
+
+  if failure then
+    return nil, failure, blockers
   end
 
   if options.splitters then

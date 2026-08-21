@@ -19,13 +19,6 @@ data:extend({
   },
   {
     type = "bool-setting",
-    name = "beltplanner-use-tunnels",
-    setting_type = "runtime-per-user",
-    default_value = true,
-    order = "b",
-  },
-  {
-    type = "bool-setting",
     name = "beltplanner-use-landfill",
     setting_type = "runtime-per-user",
     default_value = false,
