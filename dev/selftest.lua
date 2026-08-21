@@ -360,6 +360,64 @@ function selftest.run()
   end
 
   ----------------------------------------------------------------------------
+  line("--- plants: wild ones felled like trees, crops treated as yours ---")
+
+  -- Space Age's yumako trees and jellystems are "plant", not "tree", so a wild
+  -- one used to fall through to a plain blockage and refuse the run that a tree
+  -- one surface over would have sailed through. The same prototype planted by
+  -- an agricultural tower sits on the player's force, and that is a crop: it
+  -- must follow the own-building rule, not the tree rule. The type only exists
+  -- with Space Age loaded, so the section is skipped rather than failed without.
+  local plant_name
+  for name in pairs(prototypes.get_entity_filtered { { filter = "type", type = "plant" } }) do
+    plant_name = plant_name or name
+  end
+
+  if plant_name then
+    local wild = surface.create_entity {
+      name = plant_name, position = { BX + 4.5, BY + 0.5 }, force = "neutral",
+    }
+    check("wild plant placed", wild ~= nil, plant_name)
+
+    local wild_result, wild_reason = plan.build(surface, force, anchor, resolved, options)
+    check("a wild plant is cleared, not refused", wild_result ~= nil,
+      tostring(wild_reason and wild_reason[1]))
+    if wild_result then
+      local tally = count_kinds(wild_result.specs)
+      check("the wild plant is marked for removal", (tally.deconstruct or 0) == 1,
+        "got " .. tostring(tally.deconstruct))
+      check("all 30 tiles still get belt", tally.belt == 30, "got " .. tostring(tally.belt))
+      check("no tile is reported blocked", #wild_result.blockers == 0,
+        "got " .. tostring(#wild_result.blockers))
+    end
+    if wild and wild.valid then wild.destroy() end
+
+    local crop = surface.create_entity {
+      name = plant_name, position = { BX + 4.5, BY + 0.5 }, force = force,
+    }
+    check("crop placed on the test force", crop ~= nil, plant_name)
+
+    local crop_refused, crop_reason = plan.build(surface, force, anchor, resolved, options)
+    check("a crop of your own refuses the run", crop_refused == nil)
+    check("refusal names your own building, not a plain blockage",
+      crop_reason and crop_reason[1] == "beltplanner.error-own-structure",
+      tostring(crop_reason and crop_reason[1]))
+
+    local crop_cleared, crop_cleared_reason = plan.build(surface, force, anchor, resolved, cleared_options)
+    check("switching the option on clears the crop instead", crop_cleared ~= nil,
+      tostring(crop_cleared_reason and crop_cleared_reason[1]))
+    if crop_cleared then
+      local tally = count_kinds(crop_cleared.specs)
+      check("the crop is marked for removal", (tally.deconstruct or 0) == 1,
+        "got " .. tostring(tally.deconstruct))
+      check("all 30 tiles still get belt", tally.belt == 30, "got " .. tostring(tally.belt))
+    end
+    if crop and crop.valid then crop.destroy() end
+  else
+    line("  SKIP  no plant prototype available (Space Age not loaded)")
+  end
+
+  ----------------------------------------------------------------------------
   line("--- probe selection priority ---")
 
   -- These two facts are what keep the tracker from taking the cursor off the

@@ -9,9 +9,9 @@
 -- tool must not do. Anything in the way therefore stops the run and says what it
 -- was, leaving the decision with the player.
 --
--- Trees and rocks are the sole exception, because clearing those is not a guess
--- about intent. A structure the player built is only ever removed when they have
--- asked for it.
+-- Trees, rocks and wild plants are the sole exception, because clearing those is
+-- not a guess about intent. A structure the player built is only ever removed
+-- when they have asked for it.
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
@@ -116,9 +116,9 @@ end
 
 --- What this entity means for the tile it sits on.
 ---
---- "clear" - trees and rocks, always removed: that is what stamping a vanilla
----   blueprint does, and nobody means to keep a tree standing where they just
----   asked for a belt.
+--- "clear" - trees, rocks and wild plants, always removed: that is what stamping
+---   a vanilla blueprint does, and nobody means to keep a tree standing where
+---   they just asked for a belt.
 --- "own"   - something the player built, with the clearing option switched off.
 ---   Reported separately so the refusal can say which switch would fix it.
 --- "block" - anything else. Nothing is tunnelled under, so it simply stops.
@@ -127,6 +127,16 @@ local function verdict_for(entity, context)
 
   if kind == "tree" then return "clear" end
   if kind == "simple-entity" and entity.prototype.count_as_rock_for_filtered_deconstruction then
+    return "clear"
+  end
+
+  -- Gleba's yumako trees and jellystems are "plant", not "tree": a plant is a
+  -- tree that grows. Wild ones are scenery and go the way a tree does, which is
+  -- what a player who just arrived from Nauvis expects. But a plant on the
+  -- player's OWN force was put there by their agricultural tower, and that is a
+  -- crop, not a weed - so it falls through to the own-building rule below and is
+  -- only cleared when they have asked for that.
+  if kind == "plant" and entity.force.name ~= context.force_name then
     return "clear"
   end
 

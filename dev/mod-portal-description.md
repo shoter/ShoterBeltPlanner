@@ -39,7 +39,7 @@ There is a Tips and Tricks entry with all of this in it, if you would rather rea
 The point of this tool is to be predictable rather than clever, so it never guesses on your behalf:
 
 - **It will not tunnel for you.** Anything in the way stops the run and names it, instead of picking an underground length you did not ask for. A deliberate "put an underground here" gesture is on the list.
-- **It will not touch your factory unasked.** Trees and rocks are always cleared, the same as stamping a blueprint over them. Your own buildings are only marked for deconstruction if you switch **Clear my buildings** on in the tool window; otherwise the run is refused and tells you what is in the way.
+- **It will not touch your factory unasked.** Trees, rocks and wild plants are always cleared, the same as stamping a blueprint over them. Your own buildings are only marked for deconstruction if you switch **Clear my buildings** on in the tool window; otherwise the run is refused and tells you what is in the way. A crop planted by your agricultural tower counts as one of your buildings.
 - **It will not wander.** The belts go where you drew them and nowhere else.
 
 ## Settings
