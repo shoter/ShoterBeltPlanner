@@ -9,6 +9,12 @@
 -- `undo_index = 0` opens a fresh undo item and `1` appends to the newest one, so
 -- opening once and appending for everything else collapses a segment of any size
 -- into a single Ctrl+Z, landfill and felled trees included.
+--
+-- The undo item is also tagged. The session hands in where the anchor was before
+-- the commit and where it ended up, and that rides along on the first action of
+-- the item, so when the player presses Ctrl+Z the session can hear about it and
+-- put the anchor back where the removed run started instead of leaving it at
+-- the far end of belts that no longer exist.
 
 local place = {}
 
@@ -62,7 +68,25 @@ local function reconcile_existing(surface, spec, force_name, player, undo_index)
   return false, false
 end
 
-function place.execute(surface, force, player, specs)
+--- Hang `tag` on the newest undo item, which is the one execute() just filled.
+---
+--- Index 1 is the most recent item on the stack, and the tag goes on its first
+--- action: every action of the item is handed back in on_undo_applied, so one is
+--- enough and the first is the one guaranteed to exist. Guarded on the stack
+--- being non-empty rather than trusting the caller's count, because a tag on a
+--- nonexistent item is an error, not a no-op.
+local function tag_undo_item(player, tag)
+  local stack = player.undo_redo_stack
+  if not (stack and stack.valid) then return end
+  if stack.get_undo_item_count() == 0 then return end
+  if #stack.get_undo_item(1) == 0 then return end
+  stack.set_undo_tag(1, 1, "beltplanner", tag)
+end
+
+--- `undo_tag` is optional and only meaningful with a player: without one there
+--- is no undo stack for it to go on, and without anything created there is no
+--- undo item of ours to put it on, so it is silently dropped in both cases.
+function place.execute(surface, force, player, specs, undo_tag)
   local created = 0
   -- Stays true until something actually lands: if the first action fails, the
   -- undo item was never opened and the next spec has to open it instead.
@@ -134,6 +158,10 @@ function place.execute(surface, force, player, specs)
     end
 
     ::continue::
+  end
+
+  if undo_tag and player and created > 0 then
+    tag_undo_item(player, undo_tag)
   end
 
   return created
