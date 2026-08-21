@@ -153,6 +153,31 @@ script.on_event("beltplanner-cycle-belt", function(event)
   planner_gui.refresh(player)
 end)
 
+--------------------------------------------------------------------------------
+-- belt tiers
+
+-- Ctrl + Shift + B: the same cycle, backwards. Worth a key of its own because
+-- overshooting the tier you wanted otherwise costs a full lap round the list.
+script.on_event("beltplanner-cycle-belt-back", function(event)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+  session.cycle_belt(player, -1)
+  planner_gui.refresh(player)
+end)
+
+-- The tier buttons grey out whatever the force cannot build yet, which is read
+-- from the force's recipes and so goes stale the moment a belt technology
+-- finishes - or is reversed. Every open window on the force is refreshed, not
+-- only the researcher's: research is shared.
+local function on_research_changed(event)
+  local technology = event.research
+  if not (technology and technology.valid) then return end
+  planner_gui.refresh_force(technology.force)
+end
+
+script.on_event(defines.events.on_research_finished, on_research_changed)
+script.on_event(defines.events.on_research_reversed, on_research_changed)
+
 -- The tracker follows the tool rather than the run, because the opening drag
 -- needs a live pointer before any anchor exists. Putting the tool away ends
 -- everything: otherwise the anchor outlives the tool and the next selection,

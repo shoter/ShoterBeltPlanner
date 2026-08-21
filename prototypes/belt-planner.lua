@@ -142,6 +142,17 @@ data:extend({
     consuming = "none",
     order = "c",
   },
+  -- And back again. Ctrl + Shift + B is unbound in vanilla (B and Alt + B are
+  -- the blueprint keys) and clear of this mod's own Ctrl + B and Alt + B.
+  -- Factorio matches modifiers exactly, so holding Ctrl as well does not also
+  -- fire the forward step.
+  {
+    type = "custom-input",
+    name = "beltplanner-cycle-belt-back",
+    key_sequence = "CONTROL + SHIFT + B",
+    consuming = "none",
+    order = "c-back",
+  },
 
   -- Step through the qualities without leaving the tool. Linked to the vanilla
   -- quality-cycling controls (Alt + mouse wheel by default) rather than given

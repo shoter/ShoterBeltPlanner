@@ -100,22 +100,22 @@ function session.set_belt(player, belt_name)
   session.update_preview(player)
 end
 
---- Step to the next belt tier, slowest to fastest, wrapping round.
-function session.cycle_belt(player)
+--- Step to the next belt tier the player's force can build, wrapping round.
+--- `direction` is +1 towards faster (the default) or -1 towards slower.
+---
+--- Tiers the force has not researched are skipped rather than offered: a ghost
+--- for a belt nobody can craft is a ghost that sits there forever, and the
+--- window greys those tiers out for the same reason. If research is reversed
+--- under a chosen tier the choice is left alone - the player made it, and the
+--- next keypress moves off it like any other step.
+function session.cycle_belt(player, direction)
   local pdata = session.get(player.index)
-  local order = belts.all()
-  if #order == 0 then return end
+  if not belts.default() then return end
 
   local current = pdata.tier or belts.default().belt
-  local index = 1
-  for i, tier in ipairs(order) do
-    if tier.belt == current then
-      index = i
-      break
-    end
-  end
+  local chosen = belts.step(player.force, current, direction)
+  if not chosen then return end
 
-  local chosen = order[(index % #order) + 1]
   player.create_local_flying_text {
     text = { "beltplanner.belt-chosen", { "entity-name." .. chosen.belt } },
     create_at_cursor = true,
