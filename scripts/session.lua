@@ -290,16 +290,25 @@ local function commit(player, pdata, area, splitters)
     return
   end
 
-  local created = place.execute(player.surface, player.force, player, result.specs)
+  -- The anchor keeps the axis and width but jumps to the end of what was just
+  -- placed, so a second click extends the same run rather than starting over.
+  local next_anchor = geometry.next_anchor(anchor, resolved)
+  next_anchor.reversed = anchor.reversed
+
+  -- Both ends of that jump go onto the undo item, so Ctrl+Z can walk the anchor
+  -- back along with the ghosts and Ctrl+Y can walk it forward again. See
+  -- session.on_undo.
+  local undo_tag = {
+    before = geometry.anchor_snapshot(anchor),
+    after = geometry.anchor_snapshot(next_anchor),
+  }
+
+  local created = place.execute(player.surface, player.force, player, result.specs, undo_tag)
   if created == 0 then
     preview.say(player, { "beltplanner.error-nothing-placed" })
     return
   end
 
-  -- The anchor keeps the axis and width but jumps to the end of what was just
-  -- placed, so a second click extends the same run rather than starting over.
-  local next_anchor = geometry.next_anchor(anchor, resolved)
-  next_anchor.reversed = anchor.reversed
   pdata.anchor = next_anchor
   pdata.preview_tile = nil
 
@@ -408,6 +417,52 @@ function session.on_splitter(player, area)
   end
 
   commit(player, pdata, area, true)
+end
+
+--------------------------------------------------------------------------------
+-- undo and redo
+
+--- Move the anchor from `expected` to `restored`, but only if it is actually at
+--- `expected`.
+---
+--- A commit leaves the anchor at the far end of what it placed. Undoing that
+--- commit takes the ghosts away but, left alone, not the anchor, so the next
+--- click would set off from the end of a run that is no longer there. The tag
+--- on the undo item remembers both ends of the jump; undo plays it backwards
+--- and redo plays it forwards.
+---
+--- The check against `expected` is what makes this safe with history in between:
+--- if the player has clicked on since, or started a fresh anchor somewhere else,
+--- the anchor is no longer where that commit left it and it is theirs, not ours
+--- to move. Undoing an older commit then just removes ghosts, as it always did.
+---
+--- Which way the belts face is kept from the current anchor rather than taken
+--- from the tag. Flipping is a live choice, and a flip made after the commit is
+--- the newer intent; the tag only knows where the anchor stood.
+local function step_anchor(player, pdata, expected, restored)
+  local anchor = pdata.anchor
+  if not anchor then return false end
+  if not geometry.same_anchor(anchor, expected) then return false end
+
+  local moved = geometry.anchor_snapshot(restored)
+  moved.reversed = anchor.reversed
+  pdata.anchor = moved
+  pdata.preview_tile = nil
+  preview.render(player, pdata, moved)
+  return true
+end
+
+--- The player undid one of our commits while holding the tool. `tag` is the
+--- table place.execute hung on the undo item.
+function session.on_undo(player, tag)
+  if not (tag and tag.before and tag.after) then return false end
+  return step_anchor(player, session.get(player.index), tag.after, tag.before)
+end
+
+--- The player redid one of our commits while holding the tool.
+function session.on_redo(player, tag)
+  if not (tag and tag.before and tag.after) then return false end
+  return step_anchor(player, session.get(player.index), tag.before, tag.after)
 end
 
 return session

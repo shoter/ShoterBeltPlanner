@@ -649,6 +649,42 @@ function selftest.run()
   check("next anchor sits at the far end", next_anchor.tile.x == BX + 9,
     "got " .. tostring(next_anchor.tile.x))
 
+  ----------------------------------------------------------------------------
+  line("--- undo tag ---")
+  -- The tag itself lands on the player's undo stack, and there is no player
+  -- here, so what can be checked is the bookkeeping around it: a tag handed in
+  -- without a player is dropped rather than erroring, and the anchor comparison
+  -- that decides whether undo may move the anchor behaves.
+
+  local snap = geometry.anchor_snapshot(anchor)
+  check("snapshot keeps axis, lanes and tile", geometry.same_anchor(snap, anchor))
+  check("snapshot is a copy, not the anchor", snap ~= anchor and snap.tile ~= anchor.tile)
+
+  local flipped = geometry.anchor_snapshot(anchor)
+  flipped.reversed = not anchor.reversed
+  check("facing does not change where an anchor is", geometry.same_anchor(flipped, anchor))
+  check("the far end is a different anchor", not geometry.same_anchor(next_anchor, anchor))
+
+  local one_tile = geometry.anchor_from_area(area(BX, BY, BX + 1, BY + 1))
+  check("a 1x1 anchor has no axis yet", one_tile ~= nil and one_tile.axis == nil)
+  check("an axis-less anchor is not the same as an axised one",
+    one_tile ~= nil and not geometry.same_anchor(geometry.anchor_snapshot(one_tile), anchor))
+  check("and compares equal to its own snapshot",
+    one_tile ~= nil and geometry.same_anchor(geometry.anchor_snapshot(one_tile), one_tile))
+
+  local tag_result = plan.build(surface, force, anchor, resolved, options)
+  check("run plans for the tag check", tag_result ~= nil)
+  if tag_result then
+    local tag = { before = snap, after = geometry.anchor_snapshot(next_anchor) }
+    local ok, err = pcall(place.execute, surface, force, nil, tag_result.specs, tag)
+    check("a tag without a player is dropped, not an error", ok, tostring(err))
+    for _, ghost in pairs(surface.find_entities_filtered {
+      area = { { BX - 2, BY - 2 }, { BX + 14, BY + 6 } }, name = "entity-ghost",
+    }) do
+      ghost.destroy()
+    end
+  end
+
   line("=== %d passed, %d failed ===", passed, failed)
 
   selftest.benchmark(surface, force, tier)

@@ -120,6 +120,32 @@ function geometry.lane_start(anchor, index)
   return { x = anchor.tile.x + offset, y = anchor.tile.y }
 end
 
+--- A plain copy of an anchor, fit for storing in an undo tag.
+---
+--- Anchors are already plain tables, but this one is built field by field so
+--- nothing that later gets hung off an anchor ends up serialised into the
+--- engine's undo stack by accident. A 1x1 anchor has no axis yet; the key is
+--- simply absent then, which is what a tag stores for nil anyway.
+function geometry.anchor_snapshot(anchor)
+  return {
+    axis = anchor.axis,
+    lanes = anchor.lanes,
+    tile = { x = anchor.tile.x, y = anchor.tile.y },
+    reversed = anchor.reversed or false,
+  }
+end
+
+--- Do two anchors name the same place? Axis, width and tile; deliberately not
+--- `reversed`, because which way the belts face is a live choice the player
+--- keeps changing, and it says nothing about WHERE the anchor is.
+function geometry.same_anchor(a, b)
+  if not (a and b) then return false end
+  return a.axis == b.axis
+    and a.lanes == b.lanes
+    and a.tile.x == b.tile.x
+    and a.tile.y == b.tile.y
+end
+
 --------------------------------------------------------------------------------
 -- resolving an endpoint
 

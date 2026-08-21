@@ -171,6 +171,44 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
 end)
 
 --------------------------------------------------------------------------------
+-- undo and redo
+
+-- The tag place.execute hung on the undo item, if this item is one of ours. The
+-- engine hands back every action of the item and the tag sits on the first, but
+-- the first action could have been removed by another mod, so all of them are
+-- searched rather than only actions[1] read.
+local function undo_tag_of(actions)
+  for _, action in ipairs(actions or {}) do
+    local tags = action.tags
+    if tags and tags.beltplanner then return tags.beltplanner end
+  end
+  return nil
+end
+
+-- Only while the tool is held: putting it away already cleared the anchor, and
+-- with nothing anchored there is nothing to walk back. Undoing a run from this
+-- mod with some other tool in hand is just an undo.
+local function on_undo_redo(event, step)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+
+  local tag = undo_tag_of(event.actions)
+  if not tag then return end
+
+  if step(player, tag) then
+    planner_gui.refresh(player)
+  end
+end
+
+script.on_event(defines.events.on_undo_applied, function(event)
+  on_undo_redo(event, session.on_undo)
+end)
+
+script.on_event(defines.events.on_redo_applied, function(event)
+  on_undo_redo(event, session.on_redo)
+end)
+
+--------------------------------------------------------------------------------
 -- teardown
 
 local function forget_player(event)
