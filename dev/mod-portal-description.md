@@ -31,6 +31,7 @@ Controls:
 - **Shift + B** — next belt tier
 - **Shift + right-drag** — end the run with splitters
 - **Right-drag** — cancel
+- **Alt + mouse wheel** — next or previous quality, where quality is in play (the tool window offers the same choice; without quality nothing changes)
 
 There is a Tips and Tricks entry with all of this in it, if you would rather read it in game.
 

@@ -10,6 +10,7 @@
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
+local qualities = require("scripts/qualities")
 
 local preview = {}
 
@@ -269,6 +270,18 @@ local function draw_summary(player, pdata, anchor, resolved, specs)
   end
 end
 
+--- What the label adds for a non-normal quality, or nothing.
+---
+--- Normal is left unsaid: it is what every ghost was before quality could be
+--- chosen, and on an install without quality the label has to read exactly as
+--- it always did. The name comes from the plan result, not from the player's
+--- choice, so the label describes what the specs will be placed at.
+local function quality_suffix(result)
+  local quality = result.quality and qualities.get(result.quality)
+  if not quality or quality.name == "normal" then return "" end
+  return { "beltplanner.quality-suffix", quality.localised_name }
+end
+
 --------------------------------------------------------------------------------
 -- public
 
@@ -296,7 +309,7 @@ function preview.render(player, pdata, anchor, resolved, result, blockers)
   local head = geometry.lane_start(anchor, 1)
   store(pdata, rendering.draw_text {
     text = { "beltplanner.preview-label", anchor.lanes, result.cost,
-      anchor.reversed and { "beltplanner.reversed-suffix" } or "" },
+      { "", anchor.reversed and { "beltplanner.reversed-suffix" } or "", quality_suffix(result) } },
     target = { head.x + 0.5, head.y - 1.1 },
     color = ANCHOR_COLOUR,
     scale = 0.6,

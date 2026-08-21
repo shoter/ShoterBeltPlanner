@@ -1,6 +1,6 @@
--- The tool's window: belt tier, and the two decisions the brief asks to be
--- visible rather than buried in mod settings - whether to tunnel under things
--- and whether to landfill water.
+-- The tool's window: belt tier, the quality to place at when there is more than
+-- one, and the two decisions the brief asks to be visible rather than buried in
+-- mod settings - whether to tunnel under things and whether to landfill water.
 --
 -- It exists only while the tool is in hand, so it is built on taking the tool
 -- and destroyed on putting it away. Nothing about it is persisted beyond the
@@ -8,6 +8,7 @@
 
 local flib_gui = require("__flib__.gui")
 local belts = require("scripts/belts")
+local qualities = require("scripts/qualities")
 local session = require("scripts/session")
 
 local planner_gui = {}
@@ -46,9 +47,21 @@ local function on_tier_clicked(event)
   planner_gui.refresh(player)
 end
 
+local function on_quality_clicked(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+
+  local quality = event.element.tags.quality
+  if not quality then return end
+
+  session.set_quality(player, quality)
+  planner_gui.refresh(player)
+end
+
 flib_gui.add_handlers({
   beltplanner_option_toggled = on_option_toggled,
   beltplanner_tier_clicked = on_tier_clicked,
+  beltplanner_quality_clicked = on_quality_clicked,
 })
 
 --------------------------------------------------------------------------------
@@ -64,6 +77,50 @@ local function checkbox(option, caption, tooltip, state)
     tags = { option = option },
     handler = { [defines.events.on_gui_checked_state_changed] = on_option_toggled },
   }
+end
+
+--- The quality choice: a caption and one slot button per selectable quality,
+--- lowest first, in the same shape as the belt tier row above it.
+---
+--- Only built when there is a choice to make. A base-game-only install has a
+--- single selectable quality, and a row offering one option would be noise that
+--- also made the window taller for nothing.
+local function add_quality_row(flow, pdata)
+  if not qualities.selectable() then return end
+
+  local chosen = session.quality_of(pdata).name
+
+  local elems = flib_gui.add(flow, {
+    { type = "label", style = "caption_label", caption = { "beltplanner.gui-quality" } },
+    { type = "table", name = "beltplanner_qualities", column_count = 5 },
+  })
+
+  for _, quality in ipairs(qualities.all()) do
+    flib_gui.add(elems.beltplanner_qualities, {
+      type = "sprite-button",
+      style = "slot_button",
+      sprite = "quality/" .. quality.name,
+      tooltip = quality.localised_name,
+      toggled = quality.name == chosen,
+      tags = { quality = quality.name },
+      handler = { [defines.events.on_gui_click] = on_quality_clicked },
+    })
+  end
+
+  flow.visible = true
+end
+
+--- Re-mark which quality button is the chosen one. A no-op when the row was
+--- never built.
+local function refresh_quality_row(body, pdata)
+  local flow = body["beltplanner_quality"]
+  local buttons = flow and flow["beltplanner_qualities"]
+  if not buttons then return end
+
+  local chosen = session.quality_of(pdata).name
+  for _, button in pairs(buttons.children) do
+    button.toggled = button.tags.quality == chosen
+  end
 end
 
 --- Rebuild the window from scratch. Cheap enough at this size, and far less
@@ -86,6 +143,10 @@ function planner_gui.open(player)
       direction = "vertical",
       { type = "label", style = "caption_label", caption = { "beltplanner.gui-belt" } },
       { type = "table", name = "beltplanner_tiers", column_count = 4 },
+      -- Filled in and shown by add_quality_row only when there is a quality to
+      -- choose. Invisible elements take no space, so without one the window is
+      -- pixel for pixel what it was before quality existed.
+      { type = "flow", name = "beltplanner_quality", direction = "vertical", visible = false },
       { type = "line" },
       checkbox("landfill", { "beltplanner.gui-landfill" }, { "beltplanner.gui-landfill-tip" }, pdata.landfill),
       checkbox("clear_built", { "beltplanner.gui-clear" }, { "beltplanner.gui-clear-tip" }, pdata.clear_built),
@@ -106,6 +167,8 @@ function planner_gui.open(player)
       handler = { [defines.events.on_gui_click] = on_tier_clicked },
     })
   end
+
+  add_quality_row(elems.beltplanner_quality, pdata)
 
   planner_gui.refresh(player)
 end
@@ -135,6 +198,8 @@ function planner_gui.refresh(player)
       button.toggled = button.tags.belt == chosen
     end
   end
+
+  refresh_quality_row(body, pdata)
 
   local status = body["beltplanner_status"]
   if status then

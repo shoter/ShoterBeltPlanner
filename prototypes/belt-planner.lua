@@ -143,6 +143,28 @@ data:extend({
     order = "c",
   },
 
+  -- Step through the qualities without leaving the tool. Linked to the vanilla
+  -- quality-cycling controls (Alt + mouse wheel by default) rather than given
+  -- keys of their own, so changing the quality here is the same gesture as
+  -- changing the quality of a ghost in hand. consuming = "none" so the scroll
+  -- still reaches the game when the tool is not held.
+  {
+    type = "custom-input",
+    name = "beltplanner-cycle-quality-up",
+    key_sequence = "",
+    linked_game_control = "cycle-quality-up",
+    consuming = "none",
+    order = "g",
+  },
+  {
+    type = "custom-input",
+    name = "beltplanner-cycle-quality-down",
+    key_sequence = "",
+    linked_game_control = "cycle-quality-down",
+    consuming = "none",
+    order = "h",
+  },
+
   -- The tool has eight gestures and nothing in the game explains them. A tips
   -- entry is where a player already looks. starting_status = "unlocked" makes it
   -- readable from the start rather than waiting on a trigger it will never get.

@@ -23,6 +23,11 @@ local function matches(existing, spec)
   if existing.ghost_name ~= spec.name then return false end
   if existing.direction ~= spec.direction then return false end
   if spec.type and existing.belt_to_ground_type ~= spec.type then return false end
+  -- A ghost's quality is the quality the entity will be built at, and a spec
+  -- with none asks for "normal", which is also what create_entity defaults to.
+  -- Without this a quality change mid-chain would leave the shared tile at the
+  -- old quality, exactly the way a tier change used to strand a belt.
+  if existing.quality.name ~= (spec.quality or "normal") then return false end
   return true
 end
 
@@ -101,6 +106,9 @@ function place.execute(surface, force, player, specs)
         -- is read-only, so an entry/exit set wrongly here cannot be repaired
         -- afterwards.
         type = spec.type,
+        -- Nil means "normal". Tile ghosts never come through here, which is
+        -- right: a tile has no quality.
+        quality = spec.quality,
       }
     end
 
