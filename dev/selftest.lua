@@ -471,6 +471,75 @@ function selftest.run()
     "got " .. tostring(next_anchor.tile.x))
 
   line("=== %d passed, %d failed ===", passed, failed)
+
+  selftest.benchmark(surface, force, tier)
+end
+
+--- What a live preview actually costs.
+---
+--- The preview re-plans every time the pointer crosses a tile, and each plan
+--- surveys the whole run box. Whether that matters has been guesswork so far, so
+--- it is measured instead.
+function selftest.benchmark(surface, force, tier)
+  local BX, BY = 4000, 4000
+  local LONG = 200
+
+  surface.request_to_generate_chunks({ x = BX + LONG / 2, y = BY }, 8)
+  surface.force_generate_chunk_requests()
+  clear_area(surface, BX - 5, BY - 5, BX + LONG + 10, BY + 10)
+
+  local options = { tier = tier, tunnels = true, landfill = false, max_tiles = 100000 }
+  local anchor = geometry.anchor_from_area(area(BX, BY, BX + 1, BY + 3))
+  local short_run = geometry.resolve(anchor, { x = BX + 9, y = BY })
+  local long_run = geometry.resolve(anchor, { x = BX + LONG - 1, y = BY })
+
+  local function bench(label, iterations, fn)
+    local profiler = game.create_profiler()
+    for _ = 1, iterations do fn() end
+    profiler.stop()
+    profiler.divide(iterations)
+    log({ "", "[BP-BENCH] " .. label .. " (avg of " .. iterations .. "): ", profiler })
+  end
+
+  bench("30 tiles, clear", 200, function()
+    plan.build(surface, force, anchor, short_run, options)
+  end)
+
+  bench(LONG * 3 .. " tiles, clear", 50, function()
+    plan.build(surface, force, anchor, long_run, options)
+  end)
+
+  -- Every tile occupied by something that has to be cleared: the most expensive
+  -- path there is, since each tile also produces a removal spec.
+  local tree_name
+  for name in pairs(prototypes.get_entity_filtered { { filter = "type", type = "tree" } }) do
+    tree_name = tree_name or name
+  end
+  if tree_name then
+    local planted = 0
+    for step = 0, LONG - 1 do
+      for lane = 0, 2 do
+        if surface.create_entity {
+              name = tree_name,
+              position = { BX + step + 0.5, BY + lane + 0.5 },
+            } then
+          planted = planted + 1
+        end
+      end
+    end
+    log("[BP-BENCH] planted " .. planted .. " trees across the run")
+
+    bench(LONG * 3 .. " tiles, every tile a tree", 50, function()
+      plan.build(surface, force, anchor, long_run, options)
+    end)
+  end
+
+  local corner = geometry.resolve(anchor, { x = BX + 100, y = BY + 60 })
+  if corner then
+    bench("corner, 3 lanes, ~" .. geometry.cost(anchor, corner) .. " tiles", 50, function()
+      plan.build(surface, force, anchor, corner, options)
+    end)
+  end
 end
 
 return selftest

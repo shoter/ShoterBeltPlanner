@@ -47,6 +47,13 @@ Date: 2026-08-21
     - The preview now fails soft. It redraws on every cursor movement and is purely cosmetic, so a
       fault in it switches the preview off for that player and says so, rather than ending the
       session. Putting the tool away and taking it out again retries.
+  Optimizations:
+    - Planning a corner was about seven times more expensive than it needed to be. The world was
+      surveyed over the rectangle enclosing the run, and the enclosing rectangle of an L is almost
+      all empty space: a 100x60 corner read some 6000 tiles to plan a few hundred. Each leg is now
+      surveyed as its own band. Measured over a 483-tile corner, 16.6ms fell to 2.3ms, which
+      matters because the preview re-plans every time the pointer crosses a tile and a tick is
+      16.7ms.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.

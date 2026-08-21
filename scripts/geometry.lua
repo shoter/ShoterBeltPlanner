@@ -283,33 +283,46 @@ end
 --------------------------------------------------------------------------------
 -- derived facts
 
---- Every tile the run touches, as one box, so the world can be surveyed in a
---- single query instead of one per tile.
-function geometry.bounding_box(anchor, resolved)
-  local axis = resolved.axis
-  local along0, cross0 = of_tile(axis, anchor.tile)
-  local lanes = anchor.lanes
-
-  local along_lo, along_hi, cross_lo, cross_hi
-
-  if not resolved.curved then
-    local far = along0 + resolved.along_sign * (resolved.length - 1)
-    along_lo, along_hi = min(along0, far), max(along0, far)
-    cross_lo, cross_hi = cross0, cross0 + lanes - 1
-  else
-    local far = resolved.corner_base + resolved.along_sign * (lanes - 1)
-    along_lo = min(along0, resolved.corner_base, far)
-    along_hi = max(along0, resolved.corner_base, far)
-    cross_lo = min(cross0, resolved.cross_end)
-    cross_hi = max(cross0 + lanes - 1, resolved.cross_end)
-  end
-
+--- Box covering an along/cross rectangle, in world coordinates.
+local function box_of(axis, along_lo, along_hi, cross_lo, cross_hi)
   local a = to_tile(axis, along_lo, cross_lo)
   local b = to_tile(axis, along_hi, cross_hi)
-
   return {
     left_top = { x = min(a.x, b.x), y = min(a.y, b.y) },
     right_bottom = { x = max(a.x, b.x) + 1, y = max(a.y, b.y) + 1 },
+  }
+end
+
+--- The areas the world has to be surveyed over, so it can be read in a couple of
+--- queries rather than one per tile.
+---
+--- A corner is returned as TWO boxes, one per leg, not as the rectangle that
+--- encloses them. The enclosing rectangle of an L is almost all empty space: a
+--- 100x60 corner spans some 6000 tiles to plan a few hundred, and surveying that
+--- cost about ten times as much per tile as a straight run of the same length.
+function geometry.survey_boxes(anchor, resolved)
+  local axis = resolved.axis
+  local along0, cross0 = of_tile(axis, anchor.tile)
+  local lanes = anchor.lanes
+  local cross_hi = cross0 + lanes - 1
+
+  if not resolved.curved then
+    local far = along0 + resolved.along_sign * (resolved.length - 1)
+    return { box_of(axis, min(along0, far), max(along0, far), cross0, cross_hi) }
+  end
+
+  -- The corners occupy `lanes` consecutive along-coordinates; the legs run out
+  -- of those in each direction.
+  local corner_far = resolved.corner_base + resolved.along_sign * (lanes - 1)
+  local corner_lo = min(resolved.corner_base, corner_far)
+  local corner_hi = max(resolved.corner_base, corner_far)
+
+  return {
+    -- everything before the turn: a band `lanes` wide along the anchor axis
+    box_of(axis, min(along0, corner_lo), max(along0, corner_hi), cross0, cross_hi),
+    -- everything after it: a band `lanes` wide across the other axis
+    box_of(axis, corner_lo, corner_hi,
+      min(cross0, resolved.cross_end), max(cross_hi, resolved.cross_end)),
   }
 end
 

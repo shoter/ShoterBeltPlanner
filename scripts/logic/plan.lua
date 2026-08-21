@@ -44,12 +44,7 @@ local function key_of(x, y)
   return x .. ":" .. y
 end
 
---- Everything the run needs to know about the world, in two queries rather than
---- two per tile. Entities are bucketed onto every tile their bounding box
---- touches, so a 3x3 machine blocks all nine.
-local function survey(surface, box)
-  local water, occupants = {}, {}
-
+local function survey_box(surface, box, water, occupants)
   for _, tile in pairs(surface.find_tiles_filtered { area = box, collision_mask = "water_tile" }) do
     water[key_of(tile.position.x, tile.position.y)] = true
   end
@@ -73,6 +68,20 @@ local function survey(surface, box)
         end
       end
     end
+  end
+end
+
+--- Everything the run needs to know about the world, in a couple of queries
+--- rather than two per tile. Entities are bucketed onto every tile their
+--- bounding box touches, so a 3x3 machine blocks all nine.
+---
+--- Takes a LIST of boxes: a corner is surveyed as two thin bands rather than the
+--- mostly-empty rectangle enclosing them.
+local function survey(surface, boxes)
+  local water, occupants = {}, {}
+
+  for _, box in ipairs(boxes) do
+    survey_box(surface, box, water, occupants)
   end
 
   return water, occupants
@@ -354,8 +363,7 @@ function plan.build(surface, force, anchor, resolved, options)
     seen = {},
   }
 
-  local box = geometry.bounding_box(anchor, resolved)
-  local water, occupants = survey(surface, box)
+  local water, occupants = survey(surface, geometry.survey_boxes(anchor, resolved))
 
   local specs, blockers = {}, {}
 
