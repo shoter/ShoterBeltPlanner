@@ -7,6 +7,7 @@ local plan = require("scripts/logic/plan")
 local place = require("scripts/logic/place")
 local belts = require("scripts/belts")
 local cursor_const = require("scripts/cursor/const")
+local tracker = require("scripts/cursor/tracker")
 
 local selftest = {}
 
@@ -269,6 +270,53 @@ function selftest.run()
   if foreign and foreign.valid then foreign.destroy() end
 
   ----------------------------------------------------------------------------
+  line("--- things that cannot collide with a belt do not stop it ---")
+
+  -- The regression this section exists for. The survey used to ask what TYPE an
+  -- entity was and treat anything it did not recognise as an obstruction; a
+  -- construction robot is on your force, so a bot passing overhead refused the
+  -- whole run and blamed "your own buildings". The tool calls bots in itself by
+  -- placing ghosts, so extending a run was the likeliest way to meet it. The
+  -- question is now whether the collision masks share a layer, which no bot,
+  -- corpse, character or dropped item ever does with a belt.
+  local bystanders = {
+    surface.create_entity {
+      name = "construction-robot", position = { BX + 3.5, BY + 0.5 }, force = force,
+    },
+    surface.create_entity {
+      name = "logistic-robot", position = { BX + 5.5, BY + 1.5 }, force = force,
+    },
+    surface.create_entity {
+      name = "item-on-ground", position = { BX + 6.5, BY + 2.5 }, stack = "iron-plate",
+    },
+  }
+  check("bystanders placed on the line", #bystanders == 3 and bystanders[3] ~= nil,
+    "got " .. tostring(#bystanders))
+
+  local ignored, ignored_reason = plan.build(surface, force, anchor, resolved, options)
+  check("a robot overhead does not refuse the run", ignored ~= nil,
+    tostring(ignored_reason and ignored_reason[1]))
+  if ignored then
+    local tally = count_kinds(ignored.specs)
+    check("nothing is marked for removal because of them", tally.deconstruct == nil,
+      "got " .. tostring(tally.deconstruct))
+    check("all 30 tiles still get belt", tally.belt == 30, "got " .. tostring(tally.belt))
+    check("no tile is reported blocked", #ignored.blockers == 0,
+      "got " .. tostring(#ignored.blockers))
+  end
+
+  -- And with clearing switched on it must not decide to deconstruct them
+  -- either, which is what the type-list version did.
+  local swept = plan.build(surface, force, anchor, resolved, cleared_options)
+  check("clearing does not order a robot deconstructed",
+    swept ~= nil and count_kinds(swept.specs).deconstruct == nil,
+    tostring(swept and count_kinds(swept.specs).deconstruct))
+
+  for _, bystander in ipairs(bystanders) do
+    if bystander and bystander.valid then bystander.destroy() end
+  end
+
+  ----------------------------------------------------------------------------
   line("--- trees are cleared, not refused ---")
 
   local tree_name
@@ -309,6 +357,101 @@ function selftest.run()
     if tree and tree.valid then tree.destroy() end
   else
     line("  SKIP  no tree prototype available")
+  end
+
+  ----------------------------------------------------------------------------
+  line("--- probe selection priority ---")
+
+  -- These two facts are what keep the tracker from taking the cursor off the
+  -- whole map. A root sits below ordinary entities, so it only wins over bare
+  -- ground; every level below it outranks them, so once a descent has started it
+  -- holds even across a factory. Get either backwards and the tool still works
+  -- for the player holding it, which is exactly why it needs pinning here: what
+  -- breaks is everyone else's cursor, in multiplayer, silently.
+  local root_priority = prototypes.entity[cursor_const.root.name].selection_priority
+  check("a root probe sits below ordinary entities", root_priority < 50,
+    "got " .. tostring(root_priority))
+
+  local rising, detail, previous = true, "", nil
+  for _, level in ipairs(cursor_const.levels) do
+    if not level.is_root then
+      local priority = prototypes.entity[level.name].selection_priority
+      if priority <= 50 then
+        rising, detail = false, level.name .. " is " .. priority .. ", not above ordinary entities"
+      elseif previous and priority <= previous then
+        rising, detail = false, level.name .. " is " .. priority .. ", not above its parent"
+      end
+      previous = priority
+    end
+  end
+  check("every level below the root outranks them, and rises with depth", rising, detail)
+
+  ----------------------------------------------------------------------------
+  line("--- guessing the descent chain ---")
+
+  -- Every re-seed used to leave only the roots, so the pointer had to be walked
+  -- back down one level per tick - and inside a factory not at all, since roots
+  -- lose to real entities on purpose. The chain is now guessed in one go from
+  -- the last known position. If this arithmetic is off by so much as half a
+  -- tile the guess lands on the wrong tile and the preview quietly follows the
+  -- cursor at an offset, which is why it is pinned rather than eyeballed.
+  tracker.init()
+  local probe_pdata = { probes = {} }
+  local target = { x = BX + 6.5, y = BY + 3.5 }
+  tracker.seed_descent(probe_pdata, surface, target)
+
+  local levels_ok, levels_detail = true, ""
+  local expected_per_level = cursor_const.SUBDIVISIONS ^ 2
+  for pow = cursor_const.MIN_POW, cursor_const.MAX_POW - 1 do
+    local list = probe_pdata.probes[pow]
+    if not list or #list ~= expected_per_level then
+      levels_ok = false
+      levels_detail = "level " .. pow .. " has " .. tostring(list and #list)
+    end
+  end
+  check("every level below the root is guessed", levels_ok, levels_detail)
+  check("the roots themselves are left alone", probe_pdata.probes[cursor_const.MAX_POW] == nil)
+
+  -- The point of the whole exercise: a leaf must be sitting on the target tile,
+  -- because that is what the next tick reads the pointer position off.
+  local want_x, want_y = math.floor(target.x), math.floor(target.y)
+  local landed = false
+  for _, probe in ipairs(probe_pdata.probes[cursor_const.MIN_POW] or {}) do
+    if math.floor(probe.position.x) == want_x and math.floor(probe.position.y) == want_y then
+      landed = true
+    end
+  end
+  check("a leaf probe lands on the target tile", landed,
+    string.format("wanted %d,%d", want_x, want_y))
+
+  -- Each level must tile its parent exactly, or the guess leaves gaps the
+  -- pointer can sit in and the descent stalls on nothing.
+  local covers, covers_detail = true, ""
+  for pow = cursor_const.MIN_POW, cursor_const.MAX_POW - 1 do
+    local size = cursor_const.by_pow[pow].size
+    local parent_size = cursor_const.by_pow[pow + 1].size
+    local left = math.floor(target.x / parent_size) * parent_size
+    local top = math.floor(target.y / parent_size) * parent_size
+
+    local area = 0
+    for _, probe in ipairs(probe_pdata.probes[pow]) do
+      local px, py = probe.position.x - size / 2, probe.position.y - size / 2
+      if px < left or py < top or px + size > left + parent_size or py + size > top + parent_size then
+        covers, covers_detail = false, "level " .. pow .. " strays outside its parent cell"
+      end
+      area = area + size * size
+    end
+    if area ~= parent_size * parent_size then
+      covers, covers_detail = false, "level " .. pow .. " covers " .. area .. " of " .. (parent_size * parent_size)
+    end
+  end
+  check("each guessed level tiles its parent exactly", covers, covers_detail)
+
+  for pow, list in pairs(probe_pdata.probes) do
+    for _, probe in ipairs(list) do
+      if probe.valid then probe.destroy() end
+    end
+    probe_pdata.probes[pow] = nil
   end
 
   ----------------------------------------------------------------------------

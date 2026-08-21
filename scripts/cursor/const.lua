@@ -12,10 +12,14 @@ const.FORCE_NAME  = "beltplanner-tracker"
 -- MIN_POW, which is the resolution the cursor position is reported at (one tile).
 const.SUBDIVISIONS = 2
 -- The game draws its own selection box round whatever the cursor is over, and
--- that is always one of these probes while the tool is held. Every level in this
--- range is therefore a box size the player sees flicker past as the search
--- narrows, so the range is kept short: one tile is as precise as the planner
--- ever needs, and 32 still catches the cursor anywhere on screen.
+-- that is always one of these probes while the tool is held. Only the leaf's box
+-- is ever seen: the tracker drops the selection as soon as a coarser probe has
+-- been subdivided, because otherwise every level in this range flashes past as a
+-- box of its own size and the tool looks like it is picking areas it is not.
+--
+-- The range is still kept short, since each level costs a tick of input lag: one
+-- tile is as precise as the planner ever needs, and 32 still catches the cursor
+-- anywhere on screen.
 const.MIN_POW      = 0   -- 2^0 = one tile
 const.MAX_POW      = 5   -- 2^5 = 32 tiles per root probe
 
@@ -50,11 +54,32 @@ for pow = const.MAX_POW, const.MIN_POW, -1 do
     name    = level_name(pow),
     is_root = (pow == const.MAX_POW),
     is_leaf = (pow == const.MIN_POW),
-    -- A child sits inside its parent, so both are under the cursor at once.
-    -- Priority has to rise as the box shrinks or the descent stalls on the
-    -- parent. 255 is the engine maximum; staying under it leaves other mods
-    -- room to outrank us deliberately.
-    selection_priority = 200 + (const.MAX_POW - pow),
+    -- A child sits inside its parent, so both are under the cursor at once, and
+    -- priority has to rise as the box shrinks or the descent stalls on the
+    -- parent. 255 is the engine maximum; staying under it leaves other mods room
+    -- to outrank us deliberately.
+    --
+    -- The ROOTS are the exception and sit below everything instead. They tile a
+    -- 224x224 block, so at high priority they take the cursor off every real
+    -- entity in that whole area -- and not only for the player being tracked,
+    -- because visibility is a property of the force, so in multiplayer everyone
+    -- on it loses their cursor to boxes they cannot see. Below the default of 50
+    -- a root only wins over bare ground, which is all it has to do to start a
+    -- descent, and the probes that DO outrank real entities then cover one root
+    -- cell rather than the whole block.
+    --
+    -- A descent therefore cannot BEGIN on a root while the pointer rests on
+    -- something selectable. That used to mean waiting for open ground; the
+    -- tracker now guesses the finer levels instead of walking down to them, both
+    -- when the field is re-seeded and when a real entity is what got selected,
+    -- and those probes do outrank ordinary entities.
+    --
+    -- 1, not 0: the engine treats a selection_priority of 0 as though the field
+    -- were absent and gives it the default of 50, which would tie with ordinary
+    -- entities rather than lose to them. Nothing complains -- the prototype
+    -- simply reads back as 50 - so the self-test asserts the value the engine
+    -- ended up with rather than the one written here.
+    selection_priority = (pow == const.MAX_POW) and 1 or (250 + (const.MAX_POW - 1 - pow)),
   }
   const.levels[#const.levels + 1] = level
   const.by_pow[pow]         = level

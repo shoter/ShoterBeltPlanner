@@ -15,7 +15,6 @@
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
-local cursor_const = require("scripts/cursor/const")
 
 local plan = {}
 
@@ -25,42 +24,64 @@ local floor, ceil = math.floor, math.ceil
 -- player can do something about from the tool window.
 local FREE, WATER, BLOCKED, OWNED = 1, 2, 3, 4
 
--- Types an area query returns that never obstruct a belt. Without this list
--- their mere presence would condemn a tile.
-local HARMLESS = {
-  ["item-entity"] = true,
-  ["resource"] = true,
-  ["corpse"] = true,
-  ["item-request-proxy"] = true,
-  ["highlight-box"] = true,
-  ["deconstructible-tile-proxy"] = true,
-  ["particle-source"] = true,
-  ["explosion"] = true,
-  ["smoke-with-trigger"] = true,
-  -- Ghosts are almost certainly ours from the previous click, and building over
-  -- one is fine.
-  ["entity-ghost"] = true,
-  ["tile-ghost"] = true,
-}
-
 --------------------------------------------------------------------------------
 -- survey
+
+--- Could an entity like this one be in a belt's way at all?
+---
+--- Asked of the engine rather than answered from a list. This used to be a table
+--- of entity TYPES assumed harmless, which is a denylist by omission across
+--- every type in the game: whatever the list failed to name condemned the tile.
+--- Construction robots are the case that proved it wrong. A robot is on your
+--- force, so one drifting over the line refused the whole run and blamed "your
+--- own buildings" - and this tool calls robots in itself by placing ghosts, so
+--- extending a run was the gesture most likely to hit it. Character corpses and
+--- spider legs went the same way.
+---
+--- Two collision masks that share no layer cannot collide, whatever the entities
+--- are. One rule therefore settles robots, corpses, characters, biters, dropped
+--- items, ore, ghosts and our own cursor probes at once, and still blocks on
+--- trees, cliffs, rails, machines and other belts. It is also the same question
+--- the construction robot asks later, so the plan agrees with what can actually
+--- be built.
+local function obstruction_test(belt_name)
+  local belt_layers = prototypes.entity[belt_name].collision_mask.layers
+
+  -- collision_mask builds a fresh table on every read, and a survey walks
+  -- hundreds of entities that are mostly repeats of a handful of prototypes, so
+  -- the verdict is cached by name for the life of one plan.
+  local known = {}
+
+  return function(entity)
+    local name = entity.name
+    local cached = known[name]
+    if cached ~= nil then return cached end
+
+    local layers = entity.prototype.collision_mask.layers
+    local obstructs = false
+    for layer in pairs(belt_layers) do
+      if layers[layer] then
+        obstructs = true
+        break
+      end
+    end
+
+    known[name] = obstructs
+    return obstructs
+  end
+end
 
 local function key_of(x, y)
   return x .. ":" .. y
 end
 
-local function survey_box(surface, box, water, occupants)
+local function survey_box(surface, box, water, occupants, obstructs)
   for _, tile in pairs(surface.find_tiles_filtered { area = box, collision_mask = "water_tile" }) do
     water[key_of(tile.position.x, tile.position.y)] = true
   end
 
   for _, entity in pairs(surface.find_entities_filtered { area = box }) do
-    -- Our own cursor probes are invisible, collide with nothing, and blanket the
-    -- area by design. Surveyed as obstructions they force can_place_entity to be
-    -- consulted on every tile, and that call refuses any tile already holding a
-    -- ghost - so a second run over the first one came back entirely blocked.
-    if entity.valid and not HARMLESS[entity.type] and not cursor_const.by_name[entity.name] then
+    if entity.valid and obstructs(entity) then
       local bb = entity.bounding_box
       for x = floor(bb.left_top.x), ceil(bb.right_bottom.x) - 1 do
         for y = floor(bb.left_top.y), ceil(bb.right_bottom.y) - 1 do
@@ -83,11 +104,11 @@ end
 ---
 --- Takes a LIST of boxes: a corner is surveyed as two thin bands rather than the
 --- mostly-empty rectangle enclosing them.
-local function survey(surface, boxes)
+local function survey(surface, boxes, obstructs)
   local water, occupants = {}, {}
 
   for _, box in ipairs(boxes) do
-    survey_box(surface, box, water, occupants)
+    survey_box(surface, box, water, occupants, obstructs)
   end
 
   return water, occupants
@@ -109,6 +130,10 @@ local function verdict_for(entity, context)
     return "clear"
   end
 
+  -- A character can no longer reach this far: a character's collision mask
+  -- shares no layer with a belt's, so the survey drops it before here. The guard
+  -- stays anyway, because marking a player for deconstruction is a bad enough
+  -- outcome to keep one comparison against.
   if kind ~= "character" and entity.force.name == context.force_name then
     return context.clear_built and "clear" or "own"
   end
@@ -343,7 +368,8 @@ function plan.build(surface, force, anchor, resolved, options)
     seen = {},
   }
 
-  local water, occupants = survey(surface, geometry.survey_boxes(anchor, resolved))
+  local water, occupants = survey(surface, geometry.survey_boxes(anchor, resolved),
+    obstruction_test(tier.belt))
 
   local specs, blockers = {}, {}
 

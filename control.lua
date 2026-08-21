@@ -37,26 +37,40 @@ end)
 --------------------------------------------------------------------------------
 -- helpers
 
+--- Run something that draws, and let a fault cost the preview rather than the
+--- session.
+---
 --- The preview redraws on every cursor move and is purely cosmetic, yet it is
 --- the one part of this mod with no automated coverage: nothing that draws can
---- run headlessly, because --create produces a map with no player. A fault in it
---- should therefore cost the preview and not the session, so it runs behind
---- pcall and is switched off for that player after the first failure rather than
---- erroring again every tick. Taking the tool out afresh re-enables it.
+--- run headlessly, because --create produces a map with no player. So it runs
+--- behind pcall and is switched off for that player after the first failure
+--- rather than erroring again every tick. Taking the tool out afresh re-enables
+--- it.
+---
+--- EVERY path that draws has to come through here, which is why this takes the
+--- action rather than naming one: session.on_press drew directly and was the one
+--- way round the guard.
 ---
 --- Safe in multiplayer: an error here is a function of state every peer shares,
 --- so every peer takes the same branch.
-local function safe_update_preview(player)
+local function guarded(player, action, ...)
   local pdata = session.get(player.index)
+  -- Once the preview is off, the state these actions keep is only ever read by
+  -- the preview itself, so skipping them entirely is right rather than merely
+  -- cheap.
   if pdata.preview_broken then return end
 
-  local ok, err = pcall(session.update_preview, player)
+  local ok, err = pcall(action, player, ...)
   if ok then return end
 
   pdata.preview_broken = true
   pcall(session.cancel, player, true)
   log("Belt Planner: preview failed, switched off for player " .. player.index .. ": " .. tostring(err))
   player.print({ "beltplanner.preview-failed" })
+end
+
+local function safe_update_preview(player)
+  guarded(player, session.update_preview)
 end
 
 local function holding_tool(player)
@@ -78,7 +92,7 @@ local function on_press(event)
 
   local player = game.get_player(event.player_index)
   if not (player and holding_tool(player)) then return end
-  session.on_press(player, event.cursor_position)
+  guarded(player, session.on_press, event.cursor_position)
 end
 
 script.on_event("beltplanner-press", on_press)
@@ -171,7 +185,31 @@ end
 
 script.on_event(defines.events.on_player_left_game, forget_player)
 script.on_event(defines.events.on_player_removed, forget_player)
-script.on_event(defines.events.on_player_changed_surface, forget_player)
+
+-- Changing surface is not putting the tool down, and treating it as though it
+-- were left the tool inert in hand: the probes stopped, the window shut, and the
+-- only way back was to stow the tool and take it out again. Space Age players
+-- cross surfaces constantly.
+--
+-- The anchor genuinely cannot survive the move, because it names tiles on the
+-- surface it was made on, so the run is cancelled. The tool itself carries over,
+-- and re-entering re-seeds the probe field on the surface the player is now on.
+script.on_event(defines.events.on_player_changed_surface, function(event)
+  local player = game.get_player(event.player_index)
+  if not player then
+    tracker.stop(event.player_index)
+    return
+  end
+
+  session.leave(player)
+
+  if holding_tool(player) then
+    session.enter(player)
+    planner_gui.open(player)
+  else
+    planner_gui.close(player)
+  end
+end)
 
 --------------------------------------------------------------------------------
 -- cursor tracker (M0 scaffolding)
@@ -242,6 +280,17 @@ script.on_event(defines.events.on_selected_entity_changed, function(event)
 end)
 
 script.on_event(defines.events.on_player_changed_position, tracker.on_player_moved)
+
+-- Which forces may see the probes is recomputed from which forces have someone
+-- tracking, so it goes stale when the set of forces or their membership changes.
+-- Starting and stopping the tracker covers the common case; these cover the rest.
+local function refresh_probe_visibility()
+  tracker.refresh_visibility()
+end
+
+script.on_event(defines.events.on_force_created, refresh_probe_visibility)
+script.on_event(defines.events.on_forces_merged, refresh_probe_visibility)
+script.on_event(defines.events.on_player_changed_force, refresh_probe_visibility)
 
 -- Tracking itself now follows the tool, so this only toggles the diagnostic
 -- readout drawn on top of it.

@@ -35,6 +35,13 @@ local SPLITTER_TINT = { 0.6, 0.8, 1, 0.95 }
 local SPRITE_LIMIT = 300
 local ARROW_EVERY = 3
 
+-- The same ceiling, for the same reason, on the tiles a refusal marks. A run
+-- refused across a built base names every offending tile on every lane, and each
+-- one was a render object rebuilt every time the pointer crossed a tile - the
+-- exact cliff SPRITE_LIMIT exists to prevent, on the path most likely to reach
+-- it. Past a few hundred the outlines have merged into a red wash anyway.
+local BLOCKER_LIMIT = 200
+
 local function store(pdata, object)
   pdata.renders = pdata.renders or {}
   pdata.renders[#pdata.renders + 1] = object
@@ -75,6 +82,51 @@ local function draw_marked_area(player, pdata, left_top, right_bottom, border, f
     surface = surface,
     players = { player },
   })
+end
+
+--- Mark the tiles that stopped a run.
+---
+--- `pdata` may be nil, which draws objects nobody has to clean up afterwards;
+--- `ttl` then decides how long they last. What the cap leaves out is counted
+--- rather than dropped quietly, because an unlabelled wash of red reads as "all
+--- of this is blocked", which is a different and larger claim than "200 of 1400
+--- tiles are marked".
+local function draw_blockers(player, pdata, blockers, ttl)
+  local total = blockers and #blockers or 0
+  if total == 0 then return end
+
+  local shown = math.min(total, BLOCKER_LIMIT)
+  local surface = player.surface
+
+  for index = 1, shown do
+    local tile = blockers[index]
+    local object = rendering.draw_rectangle {
+      color = BLOCKER_COLOUR,
+      width = 3,
+      filled = false,
+      left_top = { tile.x, tile.y },
+      right_bottom = { tile.x + 1, tile.y + 1 },
+      surface = surface,
+      players = { player },
+      time_to_live = ttl,
+    }
+    if pdata then store(pdata, object) end
+  end
+
+  if total > shown then
+    local last = blockers[shown]
+    local object = rendering.draw_text {
+      text = { "beltplanner.blockers-hidden", total - shown, total },
+      target = { last.x + 0.5, last.y + 1.3 },
+      color = BLOCKER_COLOUR,
+      scale = 0.7,
+      alignment = "center",
+      surface = surface,
+      players = { player },
+      time_to_live = ttl,
+    }
+    if pdata then store(pdata, object) end
+  end
 end
 
 --- 2.0 directions are 16-way and a RealOrientation is 0..1.
@@ -231,17 +283,7 @@ function preview.render(player, pdata, anchor, resolved, result, blockers)
 
   -- Blockers are drawn even when the plan failed: seeing exactly which tile is
   -- in the way, live, is more useful than a message saying something was.
-  for _, tile in ipairs(blockers or {}) do
-    store(pdata, rendering.draw_rectangle {
-      color = BLOCKER_COLOUR,
-      width = 3,
-      filled = false,
-      left_top = { tile.x, tile.y },
-      right_bottom = { tile.x + 1, tile.y + 1 },
-      surface = player.surface,
-      players = { player },
-    })
-  end
+  draw_blockers(player, pdata, blockers)
 
   if not (result and resolved) then return end
 
@@ -341,18 +383,7 @@ end
 --- Paint the tiles that stopped a run. These expire on their own rather than
 --- joining pdata.renders, so a refusal never has to be cleaned up.
 function preview.flash_blockers(player, blockers)
-  for _, tile in ipairs(blockers or {}) do
-    rendering.draw_rectangle {
-      color = BLOCKER_COLOUR,
-      width = 3,
-      filled = false,
-      left_top = { tile.x, tile.y },
-      right_bottom = { tile.x + 1, tile.y + 1 },
-      surface = player.surface,
-      players = { player },
-      time_to_live = 90,
-    }
-  end
+  draw_blockers(player, nil, blockers, 90)
 end
 
 function preview.say(player, message)

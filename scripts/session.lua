@@ -115,7 +115,21 @@ end
 function session.update_preview(player)
   local pdata = session.get(player.index)
   local tile = tracker.get_tile(player.index)
-  if not tile then return end
+  if not tile then
+    -- Nothing to project from. Fall back to what is actually settled - the
+    -- anchor alone, or nothing at all - rather than leaving a run drawn towards
+    -- wherever the pointer was last seen. Once rather than on every call, since
+    -- this runs repeatedly while a descent converges.
+    --
+    -- Hovering the tool window is deliberately NOT this case: the tracker keeps
+    -- its last tile then, which is what lets a checkbox re-plan the run under
+    -- the pointer instead of blanking it.
+    if pdata.preview_tile ~= nil then
+      pdata.preview_tile = nil
+      preview.render(player, pdata, pdata.anchor)
+    end
+    return
+  end
 
   local last = pdata.preview_tile
   local anchor = pdata.anchor

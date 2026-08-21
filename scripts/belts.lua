@@ -42,8 +42,14 @@ local function build()
   for name, proto in pairs(prototypes.get_entity_filtered { { filter = "type", type = "splitter" } }) do
     local items = proto.items_to_place_this
     if items and #items > 0 then
+      -- pairs() order over a prototype table is not something to depend on, so
+      -- two splitters at one speed are settled by name rather than by whichever
+      -- the iteration happened to reach first.
       local key = speed_key(proto.belt_speed)
-      splitter_by_speed[key] = splitter_by_speed[key] or name
+      local chosen = splitter_by_speed[key]
+      if not chosen or name < chosen then
+        splitter_by_speed[key] = name
+      end
     end
   end
 

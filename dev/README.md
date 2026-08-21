@@ -101,9 +101,17 @@ One preview refresh, worst case, on this machine:
 | run | plan | draw | total |
 |---|---|---|---|
 | 30 tiles, clear | 0.10 | ~0.1 | ~0.2 ms |
-| 600 tiles, clear | 1.74 | 0.52 | ~2.3 ms |
-| corner, 483 tiles | 2.40 | 0.52 | ~2.9 ms |
-| 600 tiles, every tile a tree | 6.45 | 0.52 | ~7.0 ms |
+| 600 tiles, clear | 1.79 | 0.52 | ~2.3 ms |
+| corner, 483 tiles | 4.05 | 0.52 | ~4.6 ms |
+| 600 tiles, every tile a tree | 6.54 | 0.52 | ~7.0 ms |
+
+Only the corner moves between runs, and it is the one whose second leg leaves the
+flattened area and crosses whatever the seed generated, so read it as a range
+rather than a figure: three seeds gave 3.77, 3.88 and 4.09 ms. An earlier 2.40 ms
+recorded here does not reproduce on this machine for the current code *or* for
+the survey it replaced, so it was a lucky seed rather than a regression since.
+Measured on the same three seeds, the collision-mask survey costs 4.05 ms against
+5.24 ms for the entity-type list it replaced.
 
 A tick is 16.7 ms, and a refresh only happens when the pointer crosses a tile,
 not every tick. The remaining hot spot is a run where *every* tile needs clearing
