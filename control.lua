@@ -4,8 +4,15 @@
 -- each, and a second registration silently replaces the first, so every module
 -- is wired up from here rather than registering for itself.
 
+local flib_gui = require("__flib__.gui")
 local tracker = require("scripts/cursor/tracker")
 local session = require("scripts/session")
+local planner_gui = require("gui/planner_gui")
+
+-- Registers every on_gui_* event and routes it to the handler stored in the
+-- element's tags. Called at file scope so the registration is identical on
+-- every load.
+flib_gui.handle_events()
 
 local TOOL = "beltplanner-tool"
 
@@ -58,6 +65,7 @@ local function on_selected(event, force_new_anchor)
   local player = game.get_player(event.player_index)
   if not player then return end
   session.on_select(player, event.area, force_new_anchor)
+  planner_gui.refresh(player)
 end
 
 script.on_event(defines.events.on_player_selected_area, function(event)
@@ -71,19 +79,24 @@ end)
 script.on_event(defines.events.on_player_reverse_selected_area, function(event)
   if event.item ~= TOOL then return end
   local player = game.get_player(event.player_index)
-  if player then session.cancel(player, false) end
+  if player then
+    session.cancel(player, false)
+    planner_gui.refresh(player)
+  end
 end)
 
 script.on_event("beltplanner-flip", function(event)
   local player = game.get_player(event.player_index)
   if not (player and holding_tool(player)) then return end
   session.flip(player)
+  planner_gui.refresh(player)
 end)
 
 script.on_event("beltplanner-cycle-belt", function(event)
   local player = game.get_player(event.player_index)
   if not (player and holding_tool(player)) then return end
   session.cycle_belt(player)
+  planner_gui.refresh(player)
 end)
 
 -- The tracker follows the tool rather than the run, because the opening drag
@@ -96,8 +109,10 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
 
   if holding_tool(player) then
     session.enter(player)
+    planner_gui.open(player)
   else
     session.leave(player)
+    planner_gui.close(player)
   end
 end)
 
@@ -108,6 +123,7 @@ local function forget_player(event)
   local player = game.get_player(event.player_index)
   if player then
     session.leave(player)
+    planner_gui.close(player)
   else
     tracker.stop(event.player_index)
   end

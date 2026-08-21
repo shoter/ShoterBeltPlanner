@@ -20,6 +20,9 @@ Date: 2026-08-21
     - Live preview follows the cursor: belts, tunnel mouths, landfill and anything to be removed,
       with blocked tiles outlined in red before you commit. The opening drag shows its squares as
       you make it, green while the shape is a legal anchor and red when it is not.
+    - A window while the tool is held, showing the belt tier and the three decisions the run
+      depends on: tunnel under obstacles, landfill over water, and clear your own buildings. The
+      mod settings are now only the defaults those switches start at.
     - Shift+B steps through the belt tiers without leaving the tool.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,

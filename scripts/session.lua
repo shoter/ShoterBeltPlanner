@@ -30,18 +30,33 @@ function session.get(player_index)
   return pdata
 end
 
--- The belt tier cannot be a mod setting: the settings stage runs before the data
--- stage, so no belt prototype exists yet to build an allowed_values list from.
--- It lives in storage and is cycled at runtime instead.
-local function options_for(player, pdata, clear_built)
+--- Seed this player's choices the first time they pick the tool up.
+---
+--- The per-user mod settings are the DEFAULT, not the live value: once the
+--- window exists the player edits these directly, and two sources of truth for
+--- the same switch would be a bug waiting to happen. The belt tier cannot be a
+--- setting at all - the settings stage runs before any prototype exists, so
+--- there is nothing to build an allowed_values list from.
+function session.ensure_defaults(player, pdata)
+  if pdata.tunnels ~= nil then return end
+
   local per_user = settings.get_player_settings(player)
+  pdata.tunnels = per_user["beltplanner-use-tunnels"].value
+  pdata.landfill = per_user["beltplanner-use-landfill"].value
+  pdata.clear_built = false
+end
+
+local function options_for(player, pdata, ctrl)
+  session.ensure_defaults(player, pdata)
 
   return {
     tier = (pdata.tier and belts.get(pdata.tier)) or belts.default(),
-    landfill = per_user["beltplanner-use-landfill"].value,
-    tunnels = per_user["beltplanner-use-tunnels"].value,
+    landfill = pdata.landfill,
+    tunnels = pdata.tunnels,
     max_tiles = settings.global["beltplanner-max-tiles"].value,
-    clear_built = clear_built or false,
+    -- Ctrl is a momentary override on top of the sticky switch, so holding it
+    -- clears buildings for this one click without changing the setting.
+    clear_built = pdata.clear_built or ctrl or false,
   }
 end
 
@@ -56,6 +71,19 @@ local CTRL_GRACE_TICKS = 120
 --- press that precedes the release we are reacting to.
 local function ctrl_held(pdata)
   return pdata.ctrl_tick ~= nil and (game.tick - pdata.ctrl_tick) <= CTRL_GRACE_TICKS
+end
+
+--- Choose a belt tier by prototype name.
+function session.set_belt(player, belt_name)
+  local tier = belts.get(belt_name)
+  if not tier then return end
+
+  local pdata = session.get(player.index)
+  pdata.tier = tier.belt
+  player.play_sound { path = "utility/list_box_click" }
+
+  pdata.preview_tile = nil
+  session.update_preview(player)
 end
 
 --- Step to the next belt tier, slowest to fastest, wrapping round.
@@ -74,15 +102,11 @@ function session.cycle_belt(player)
   end
 
   local chosen = order[(index % #order) + 1]
-  pdata.tier = chosen.belt
   player.create_local_flying_text {
     text = { "beltplanner.belt-chosen", { "entity-name." .. chosen.belt } },
     create_at_cursor = true,
   }
-  player.play_sound { path = "utility/list_box_click" }
-
-  pdata.preview_tile = nil
-  session.update_preview(player)
+  session.set_belt(player, chosen.belt)
 end
 
 --------------------------------------------------------------------------------
@@ -158,6 +182,7 @@ end
 
 --- The tool is in hand: start following the pointer.
 function session.enter(player)
+  session.ensure_defaults(player, session.get(player.index))
   tracker.start(player)
 end
 
