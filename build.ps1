@@ -38,6 +38,7 @@ $IgnoreDirectories = @(
     '.vscode'
     '.idea'
     '.claude'
+    'dev'
     'node_modules'
 )
 

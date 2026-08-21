@@ -1,19 +1,34 @@
 -- Settings stage. Runs before data.lua.
 --
--- Setting names are a single global namespace shared by every mod, so prefix them with the mod
--- name. Where the value can be read depends only on `setting_type`:
---   "startup"            -> settings.startup[name].value, data stage and control stage
---   "runtime-global"     -> settings.global[name].value, control stage only
---   "runtime-per-user"   -> settings.get_player_settings(player)[name].value, control stage only
---
--- Every setting needs matching [mod-setting-name] / [mod-setting-description] locale entries.
+-- The belt tier is deliberately NOT here: this stage runs before any prototype
+-- exists, so there is nothing to build an allowed_values list from. It is chosen
+-- at runtime and kept in storage instead.
 
--- data:extend({
---   {
---     type = "bool-setting",
---     name = "ShoterBeltPlanner-example",
---     setting_type = "runtime-per-user",
---     default_value = true,
---     order = "a",
---   },
--- })
+data:extend({
+  {
+    -- The ceiling on how much work one click may ask for. A run is planned in a
+    -- single tick, so this is what stops a stray click across the map from
+    -- stalling the game.
+    type = "int-setting",
+    name = "beltplanner-max-tiles",
+    setting_type = "runtime-global",
+    default_value = 2000,
+    minimum_value = 50,
+    maximum_value = 100000,
+    order = "a",
+  },
+  {
+    type = "bool-setting",
+    name = "beltplanner-use-tunnels",
+    setting_type = "runtime-per-user",
+    default_value = true,
+    order = "b",
+  },
+  {
+    type = "bool-setting",
+    name = "beltplanner-use-landfill",
+    setting_type = "runtime-per-user",
+    default_value = false,
+    order = "c",
+  },
+})

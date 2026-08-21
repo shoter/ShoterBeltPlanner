@@ -1,5 +1,26 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0
 Date: 2026-08-21
+  Features:
+    - Belt Planner tool. Drag a line one tile deep to set where the run starts and how many lanes
+      wide it is, then click to run belts to that point. Each click continues from where the last
+      one ended.
+    - Builds several lanes in parallel, preserving the spacing of the opening drag.
+    - Bridges obstacles with an underground pair that spans exactly the obstacle and no further. An
+      obstacle too long for the chosen belt is refused rather than approximated.
+    - Optional landfill over water, placed as tile ghosts, so water is never modified directly.
+    - Belts can be built against their transport direction, from the destination back to the source.
+    - Everything one click places goes into a single undo item, so one press of undo removes the
+      whole run, landfill included.
+    - Corners. Clicking off to one side runs the belts out along the anchor's axis and then turns
+      once. Several lanes turn at staggered points so the bundle comes out of the corner still
+      parallel and still the same width, and the anchor turns with it so clicks keep chaining.
+    - Trees and rocks standing in the way are marked for deconstruction rather than blocking the
+      run. Ctrl+click extends that to your own buildings, which are never cleared without it.
+    - Live preview follows the cursor: belts, tunnel mouths, landfill and anything to be removed,
+      with blocked tiles outlined in red before you commit. The opening drag shows its squares as
+      you make it, green while the shape is a legal anchor and red when it is not.
+    - Shift+B steps through the belt tiers without leaving the tool.
   Info:
-    - Initial skeleton of Shoter Belt Planner. No in-game content yet.
+    - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
+      so it changes nothing in a savegame that was not already ordered.

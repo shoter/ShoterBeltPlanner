@@ -1,28 +1,216 @@
--- Control stage. Runs when a save is created or loaded, and then during play.
+-- Control stage aggregator.
 --
--- Available here: `game`, `script`, `storage`, `defines`, `prototypes`. Prototypes can be read
--- but never created or changed from here.
---
--- Rules this file exists to keep straight:
---   * all persistent state lives in `storage`, and only serialisable values go in it;
---   * event handlers are registered at the top level, never inside a condition;
---   * `on_built_entity` and friends are always registered with a filter.
+-- script.on_init / on_load / on_configuration_changed take exactly one handler
+-- each, and a second registration silently replaces the first, so every module
+-- is wired up from here rather than registering for itself.
 
---- Creates the storage keys this mod needs, leaving any that already exist untouched.
----
---- Called from both bootstrap hooks on purpose: `on_init` covers a fresh save and this mod being
---- added to an existing one, `on_configuration_changed` covers an update to a save that has run
---- an older version and is therefore missing whatever keys that version did not have.
+local tracker = require("scripts/cursor/tracker")
+local session = require("scripts/session")
+
+local TOOL = "beltplanner-tool"
+
+--------------------------------------------------------------------------------
+-- bootstrap
+
 local function init_storage()
   storage.players = storage.players or {}
+  tracker.init()
 end
 
 script.on_init(init_storage)
-script.on_configuration_changed(init_storage)
 
--- Event handlers go below, e.g.:
+script.on_configuration_changed(function()
+  init_storage()
+  -- A crash, a mod update or an interrupted session could leave probes in the
+  -- world. They are invisible, so sweep unconditionally rather than trusting the
+  -- bookkeeping in storage.
+  tracker.purge_world()
+end)
+
+--------------------------------------------------------------------------------
+-- helpers
+
+local function holding_tool(player)
+  local stack = player.cursor_stack
+  return stack ~= nil and stack.valid and stack.valid_for_read and stack.name == TOOL
+end
+
+-- Mouse-down while our tool is held. Gated hard on holding the tool: these are
+-- bound to plain and Ctrl left-click, so they fire on every click in the game
+-- and must do nothing at all the rest of the time.
+local function on_press(event, ctrl)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+  session.on_press(player, event.cursor_position, ctrl)
+end
+
+script.on_event("beltplanner-press", function(event) on_press(event, false) end)
+script.on_event("beltplanner-ctrl-press", function(event) on_press(event, true) end)
+
+--------------------------------------------------------------------------------
+-- the tool
+
+-- `select` and `alt_select` both open or extend a run; alt forces a fresh anchor
+-- even mid-run. Both are gated on event.item so another mod's selection tool
+-- never reaches this code.
+local function on_selected(event, force_new_anchor)
+  if event.item ~= TOOL then return end
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  session.on_select(player, event.area, force_new_anchor)
+end
+
+script.on_event(defines.events.on_player_selected_area, function(event)
+  on_selected(event, false)
+end)
+
+script.on_event(defines.events.on_player_alt_selected_area, function(event)
+  on_selected(event, true)
+end)
+
+script.on_event(defines.events.on_player_reverse_selected_area, function(event)
+  if event.item ~= TOOL then return end
+  local player = game.get_player(event.player_index)
+  if player then session.cancel(player, false) end
+end)
+
+script.on_event("beltplanner-flip", function(event)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+  session.flip(player)
+end)
+
+script.on_event("beltplanner-cycle-belt", function(event)
+  local player = game.get_player(event.player_index)
+  if not (player and holding_tool(player)) then return end
+  session.cycle_belt(player)
+end)
+
+-- The tracker follows the tool rather than the run, because the opening drag
+-- needs a live pointer before any anchor exists. Putting the tool away ends
+-- everything: otherwise the anchor outlives the tool and the next selection,
+-- with any tool at all, would look like a continuation.
+script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+
+  if holding_tool(player) then
+    session.enter(player)
+  else
+    session.leave(player)
+  end
+end)
+
+--------------------------------------------------------------------------------
+-- teardown
+
+local function forget_player(event)
+  local player = game.get_player(event.player_index)
+  if player then
+    session.leave(player)
+  else
+    tracker.stop(event.player_index)
+  end
+end
+
+script.on_event(defines.events.on_player_left_game, forget_player)
+script.on_event(defines.events.on_player_removed, forget_player)
+script.on_event(defines.events.on_player_changed_surface, forget_player)
+
+--------------------------------------------------------------------------------
+-- cursor tracker (M0 scaffolding)
 --
--- script.on_event(defines.events.on_player_selected_area, function(event)
---   if event.item ~= "belt-planner" then return end
---   ...
--- end)
+-- Temporary: once the tracker is wired into the preview, tracking starts and
+-- stops with the tool rather than with a hotkey of its own.
+
+local function clear_debug_overlay(pdata)
+  if not pdata.tracker_renders then return end
+  for _, object in pairs(pdata.tracker_renders) do
+    if object.valid then object.destroy() end
+  end
+  pdata.tracker_renders = nil
+end
+
+local function draw_debug_overlay(player, pdata)
+  clear_debug_overlay(pdata)
+
+  local tile = tracker.get_tile(player.index)
+  local position = tracker.get_position(player.index)
+  if not (tile and position) then return end
+
+  -- Input lag in ticks: how long the last descent took to narrow back down to a
+  -- leaf. The running maximum is the number that decides whether the tracker is
+  -- responsive enough to build the whole tool on.
+  local latency = tracker.get_last_latency(player.index)
+  pdata.worst_latency = math.max(pdata.worst_latency or 0, latency)
+
+  pdata.tracker_renders = {
+    rendering.draw_rectangle {
+      color = { 0.2, 1, 0.3, 0.6 },
+      width = 2,
+      filled = false,
+      left_top = { tile.x, tile.y },
+      right_bottom = { tile.x + 1, tile.y + 1 },
+      surface = player.surface,
+      players = { player },
+    },
+    rendering.draw_text {
+      text = string.format("%.2f, %.2f  tile %d,%d  lag %dt (max %dt)",
+        position.x, position.y, tile.x, tile.y, latency, pdata.worst_latency),
+      target = { position.x, position.y - 1.2 },
+      color = { 0.2, 1, 0.3 },
+      scale = 0.7,
+      alignment = "center",
+      surface = player.surface,
+      players = { player },
+    },
+  }
+end
+
+script.on_event(defines.events.on_selected_entity_changed, function(event)
+  tracker.on_selected_entity_changed(event)
+
+  local cursor = storage.cursor.players[event.player_index]
+  if not (cursor and cursor.tracking) then return end
+
+  local player = game.get_player(event.player_index)
+  if not player then return end
+
+  -- The tracker has just narrowed the pointer down; redraw what would be built
+  -- from here. update_preview is a no-op unless the pointer changed tile.
+  session.update_preview(player)
+
+  if storage.debug_tracker then
+    draw_debug_overlay(player, session.get(event.player_index))
+  end
+end)
+
+script.on_event(defines.events.on_player_changed_position, tracker.on_player_moved)
+
+-- Tracking itself now follows the tool, so this only toggles the diagnostic
+-- readout drawn on top of it.
+script.on_event("beltplanner-toggle-tracker", function(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+
+  local pdata = session.get(event.player_index)
+  storage.debug_tracker = not storage.debug_tracker
+
+  if storage.debug_tracker then
+    pdata.worst_latency = nil
+    player.print({ "beltplanner.tracker-on" })
+  else
+    clear_debug_overlay(pdata)
+    player.print({ "beltplanner.tracker-off" })
+  end
+end)
+
+--------------------------------------------------------------------------------
+-- escape hatch
+
+commands.add_command("beltplanner-purge", { "beltplanner.purge-help" }, function(command)
+  local removed = tracker.purge_world()
+  local player = command.player_index and game.get_player(command.player_index)
+  local message = { "beltplanner.purge-done", removed }
+  if player then player.print(message) else game.print(message) end
+end)

@@ -1,10 +1,9 @@
 -- Data stage. Runs at every game load, before any world exists.
 --
--- Available here: `data` (the prototype tables), `mods` (name -> version of every enabled mod),
--- `settings.startup`. NOT available: `game`, `script`, `storage` -- those belong to control.lua.
+-- Available here: `data`, `mods`, `settings.startup`. NOT available: `game`,
+-- `script`, `storage` -- those belong to control.lua.
 --
--- Own prototypes go here. Edits to *other* mods' prototypes go in data-updates.lua, and
--- last-resort compatibility fixes in data-final-fixes.lua.
---
--- As prototype files are added, pull them in from here:
---   require("prototypes/belt-planner")
+-- The cursor tracker probes are deliberately NOT here: they are declared in
+-- data-final-fixes.lua so that no other mod's data.raw sweep can rewrite them.
+
+require("prototypes/belt-planner")
