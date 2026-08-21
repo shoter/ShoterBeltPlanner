@@ -540,6 +540,45 @@ function selftest.benchmark(surface, force, tier)
       plan.build(surface, force, anchor, corner, options)
     end)
   end
+
+  ----------------------------------------------------------------------------
+  -- The other half of a preview refresh: the render objects. Planning was
+  -- measured first and drawing was not, which left half the cost unknown.
+  --
+  -- `players` is omitted here because a headless map has none; that draws for
+  -- everyone rather than for one player, which costs the same to create.
+  local COUNT = 300
+
+  local function make(index)
+    return rendering.draw_sprite {
+      sprite = "item/transport-belt",
+      target = { BX + (index % 60), BY + math.floor(index / 60) },
+      x_scale = 0.5, y_scale = 0.5,
+      tint = { 1, 1, 1, 0.55 },
+      surface = surface,
+    }
+  end
+
+  bench(COUNT .. " sprites: create and destroy (one refresh as it works now)", 50, function()
+    local objects = {}
+    for i = 1, COUNT do objects[i] = make(i) end
+    for i = 1, COUNT do objects[i].destroy() end
+  end)
+
+  local pool = {}
+  for i = 1, COUNT do pool[i] = make(i) end
+
+  bench(COUNT .. " sprites: move and retint an existing pool", 50, function()
+    for i = 1, COUNT do
+      local object = pool[i]
+      object.target = { BX + (i % 60) + 0.25, BY + math.floor(i / 60) }
+      object.color = { 1, 1, 1, 0.4 }
+    end
+  end)
+
+  for i = 1, COUNT do
+    if pool[i].valid then pool[i].destroy() end
+  end
 end
 
 return selftest

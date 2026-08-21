@@ -72,6 +72,41 @@ for a short run, a long run, a long run where every tile has to be cleared, and 
 corner. The preview re-plans every time the pointer crosses a tile, so these are
 the numbers that decide whether it feels smooth; a tick is 16.7 ms.
 
-It earns its keep: it is what showed a 483-tile corner costing 16.6 ms against
-1.75 ms for a 600-tile straight run. The enclosing rectangle of an L is almost
-all empty space, and the survey was reading all of it.
+It earns its keep twice over.
+
+It found a real problem: a 483-tile corner cost 16.6 ms against 1.75 ms for a
+600-tile straight run, because the enclosing rectangle of an L is almost all
+empty space and the survey was reading all of it. Surveying each leg separately
+took that to 2.3 ms.
+
+It also stopped a pointless optimisation. The preview destroys and recreates its
+render objects on every refresh, which looked worth pooling — `sprite`, `target`,
+`color`, `visible` and the scales are all writable, so objects could be moved
+instead of churned. Measured:
+
+| | cost |
+|---|---|
+| 300 sprites, create and destroy | 0.52 ms |
+| 300 sprites, move and retint a pool | 0.17 ms |
+
+A 0.35 ms saving against planning costs of 1.7–6.4 ms, in exchange for pool
+lifecycle, storage safety and hiding surplus objects. Not worth it. The benchmark
+stays so the decision can be revisited with numbers rather than reopened on a
+hunch.
+
+## Where the time actually goes
+
+One preview refresh, worst case, on this machine:
+
+| run | plan | draw | total |
+|---|---|---|---|
+| 30 tiles, clear | 0.10 | ~0.1 | ~0.2 ms |
+| 600 tiles, clear | 1.74 | 0.52 | ~2.3 ms |
+| corner, 483 tiles | 2.40 | 0.52 | ~2.9 ms |
+| 600 tiles, every tile a tree | 6.45 | 0.52 | ~7.0 ms |
+
+A tick is 16.7 ms, and a refresh only happens when the pointer crosses a tile,
+not every tick. The remaining hot spot is a run where *every* tile needs clearing
+— four times the clear-ground cost, because each tile then populates the occupant
+table, runs the clearable check and produces a removal spec. That is not a shape
+anyone builds in practice, so it is left alone.
