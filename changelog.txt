@@ -42,6 +42,11 @@ Date: 2026-08-21
     - Fixed clicking the tool window arming a drag from wherever the window sat over the map.
     - Fixed the tile shared between one run and the next keeping the old belt tier or the old
       direction after changing either mid-chain.
+    - Added a tips and tricks entry under Ghost building, since the tool has eight gestures and
+      nothing in the game explained any of them.
+    - The preview now fails soft. It redraws on every cursor movement and is purely cosmetic, so a
+      fault in it switches the preview off for that player and says so, rather than ending the
+      session. Putting the tool away and taking it out again retries.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.

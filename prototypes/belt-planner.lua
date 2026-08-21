@@ -132,6 +132,19 @@ data:extend({
     order = "c",
   },
 
+  -- The tool has eight gestures and nothing in the game explains them. A tips
+  -- entry is where a player already looks. starting_status = "unlocked" makes it
+  -- readable from the start rather than waiting on a trigger it will never get.
+  {
+    type = "tips-and-tricks-item",
+    name = "beltplanner-tips",
+    category = "ghost-building",
+    order = "z[belt-planner]",
+    starting_status = "unlocked",
+    icon = "__ShoterBeltPlanner__/graphics/icons/belt-planner.png",
+    icon_size = 64,
+  },
+
   -- M0 scaffolding: drive the cursor tracker on its own, without the tool.
   {
     type = "custom-input",

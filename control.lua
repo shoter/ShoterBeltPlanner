@@ -37,6 +37,28 @@ end)
 --------------------------------------------------------------------------------
 -- helpers
 
+--- The preview redraws on every cursor move and is purely cosmetic, yet it is
+--- the one part of this mod with no automated coverage: nothing that draws can
+--- run headlessly, because --create produces a map with no player. A fault in it
+--- should therefore cost the preview and not the session, so it runs behind
+--- pcall and is switched off for that player after the first failure rather than
+--- erroring again every tick. Taking the tool out afresh re-enables it.
+---
+--- Safe in multiplayer: an error here is a function of state every peer shares,
+--- so every peer takes the same branch.
+local function safe_update_preview(player)
+  local pdata = session.get(player.index)
+  if pdata.preview_broken then return end
+
+  local ok, err = pcall(session.update_preview, player)
+  if ok then return end
+
+  pdata.preview_broken = true
+  pcall(session.cancel, player, true)
+  log("Belt Planner: preview failed, switched off for player " .. player.index .. ": " .. tostring(err))
+  player.print({ "beltplanner.preview-failed" })
+end
+
 local function holding_tool(player)
   local stack = player.cursor_stack
   return stack ~= nil and stack.valid and stack.valid_for_read and stack.name == TOOL
@@ -207,7 +229,7 @@ script.on_event(defines.events.on_selected_entity_changed, function(event)
 
   -- The tracker has just narrowed the pointer down; redraw what would be built
   -- from here. update_preview is a no-op unless the pointer changed tile.
-  session.update_preview(player)
+  safe_update_preview(player)
 
   if storage.debug_tracker then
     draw_debug_overlay(player, session.get(event.player_index))

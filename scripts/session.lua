@@ -182,7 +182,11 @@ end
 
 --- The tool is in hand: start following the pointer.
 function session.enter(player)
-  session.ensure_defaults(player, session.get(player.index))
+  local pdata = session.get(player.index)
+  session.ensure_defaults(player, pdata)
+  -- A previous failure switched the preview off; taking the tool out again is
+  -- the retry.
+  pdata.preview_broken = nil
   tracker.start(player)
 end
 
