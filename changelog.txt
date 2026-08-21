@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 2026-08-21
+  Bugfixes:
+    - The tool window is no longer far wider than the things in it. Its two status lines were
+      single-line labels holding whole sentences, so the window stretched to fit the longest one
+      it had shown; they now wrap at a fixed width. The window also took its width from the left
+      GUI column rather than from its own contents, which with anything else in that column left
+      it wide however narrow the text was, so it now sizes itself to what it holds.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.0
 Date: 2026-08-21
   Features:

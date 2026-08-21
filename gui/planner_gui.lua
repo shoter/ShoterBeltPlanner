@@ -16,6 +16,13 @@ local planner_gui = {}
 
 local ROOT = "beltplanner_window"
 
+-- How wide the two status lines are allowed to be, and so how wide the window
+-- is: they are whole sentences - the planned-run line with its gesture hints
+-- after it runs past 140 characters - and everything else in the window is
+-- narrower than this: slot_button is 40px and a table spaces cells 4px apart,
+-- so the four-column tier row is 172px and the five quality buttons 216px.
+local STATUS_WIDTH = 300
+
 --------------------------------------------------------------------------------
 -- handlers
 --
@@ -77,6 +84,23 @@ local function checkbox(option, caption, tooltip, state)
     state = state,
     tags = { option = option },
     handler = { [defines.events.on_gui_checked_state_changed] = on_option_toggled },
+  }
+end
+
+--- One of the two status lines, fixed at STATUS_WIDTH.
+---
+--- Wrapping takes both halves: single_line lets the text break, and a width
+--- gives it somewhere to break at. Without them a label lays itself out on one
+--- line, and the window grew to whatever the longest sentence it had shown so
+--- far was - well past 900px once a tally was in it - and jumped in width every
+--- time that text changed under the pointer. The width is fixed rather than
+--- capped so the window is the same size whatever the line currently says.
+local function status_label(name)
+  return {
+    type = "label",
+    name = name,
+    caption = "",
+    style_mods = { single_line = false, width = STATUS_WIDTH },
   }
 end
 
@@ -174,6 +198,13 @@ function planner_gui.open(player)
     name = ROOT,
     direction = "vertical",
     caption = { "beltplanner.gui-title" },
+    -- Hug the content rather than filling the column. A frame left on the
+    -- default stretch rule takes its width from player.gui.left, not from what
+    -- is inside it, so with anything else in that column the window came out
+    -- far wider than its widest child and no cap on the labels below could
+    -- bring it in - the text simply wrapped in a narrow strip inside a wide
+    -- frame.
+    style_mods = { horizontally_stretchable = false },
     {
       type = "frame",
       name = "beltplanner_body",
@@ -190,8 +221,8 @@ function planner_gui.open(player)
       checkbox("clear_built", { "beltplanner.gui-clear" }, { "beltplanner.gui-clear-tip" }, pdata.clear_built),
       cliffs_checkbox(player, pdata),
       { type = "line" },
-      { type = "label", name = "beltplanner_status", caption = "" },
-      { type = "label", name = "beltplanner_tally", caption = "" },
+      status_label("beltplanner_status"),
+      status_label("beltplanner_tally"),
     },
   })
 
