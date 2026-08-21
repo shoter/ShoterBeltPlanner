@@ -360,6 +360,115 @@ function selftest.run()
   end
 
   ----------------------------------------------------------------------------
+  line("--- cliffs are a switch, and the switch needs the research ---")
+
+  -- A cliff shares the object layer with a belt, so the survey sees it like any
+  -- other obstruction. Whether it may be blown up is two questions, not one:
+  -- the switch in the window, and whether the force has cliff explosives at
+  -- all. Both are forced here so every combination is pinned.
+  local player_force = game.forces[force]
+  local had_explosives = player_force.cliff_deconstruction_enabled
+
+  -- A straight west-to-east segment is four tiles across and three deep, so
+  -- centred on the middle lane it crosses all three.
+  local cliff = surface.create_entity {
+    name = "cliff", position = { BX + 4, BY + 1.5 }, cliff_orientation = "west-to-east",
+  }
+  check("test cliff placed", cliff ~= nil and cliff.valid)
+
+  if cliff and cliff.valid then
+    -- Which of the run's tiles the cliff covers is read back from the entity
+    -- rather than assumed, because cliffs snap to a grid of their own, and the
+    -- bucketing mirrors the survey's so the two cannot drift apart.
+    local box = cliff.bounding_box
+    local cx1, cx2 = math.floor(box.left_top.x), math.ceil(box.right_bottom.x) - 1
+    local cy1, cy2 = math.floor(box.left_top.y), math.ceil(box.right_bottom.y) - 1
+    local expected = 0
+    for x = math.max(cx1, BX), math.min(cx2, BX + 9) do
+      for _ = math.max(cy1, BY), math.min(cy2, BY + 2) do
+        expected = expected + 1
+      end
+    end
+    check("the cliff lies across the run", expected > 0,
+      string.format("box %s,%s to %s,%s", box.left_top.x, box.left_top.y,
+        box.right_bottom.x, box.right_bottom.y))
+
+    local function under_the_cliff(tiles)
+      if not tiles or #tiles ~= expected then return false end
+      for _, tile in ipairs(tiles) do
+        if tile.x < cx1 or tile.x > cx2 or tile.y < cy1 or tile.y > cy2 then
+          return false
+        end
+      end
+      return true
+    end
+
+    local cliff_options = { tier = tier, landfill = false, max_tiles = 10000, clear_cliffs = true }
+
+    player_force.cliff_deconstruction_enabled = false
+
+    local off, off_reason, off_tiles = plan.build(surface, force, anchor, resolved, options)
+    check("a cliff refuses the run with the switch off", off == nil)
+    check("refusal names the cliff switch",
+      off_reason and off_reason[1] == "beltplanner.error-cliff",
+      tostring(off_reason and off_reason[1]))
+    check("every tile under the cliff is reported, and nothing else",
+      under_the_cliff(off_tiles),
+      string.format("got %s, wanted %d", tostring(off_tiles and #off_tiles), expected))
+
+    local early, early_reason = plan.build(surface, force, anchor, resolved, cliff_options)
+    check("the switch alone is not enough without cliff explosives", early == nil)
+    check("refusal still names the cliff",
+      early_reason and early_reason[1] == "beltplanner.error-cliff",
+      tostring(early_reason and early_reason[1]))
+
+    player_force.cliff_deconstruction_enabled = true
+
+    local still, still_reason = plan.build(surface, force, anchor, resolved, options)
+    check("the research alone does not clear a cliff unasked", still == nil)
+    check("refusal names the switch, not a plain blockage",
+      still_reason and still_reason[1] == "beltplanner.error-cliff",
+      tostring(still_reason and still_reason[1]))
+
+    local blasted, blasted_reason = plan.build(surface, force, anchor, resolved, cliff_options)
+    check("switch on and researched plans through the cliff", blasted ~= nil,
+      tostring(blasted_reason and blasted_reason[1]))
+
+    if blasted then
+      local tally = count_kinds(blasted.specs)
+      check("the cliff is marked for removal once, not once per tile",
+        tally.deconstruct == 1, "got " .. tostring(tally.deconstruct))
+      check("all 30 tiles get belt over it", tally.belt == 30, "got " .. tostring(tally.belt))
+      check("no tile is reported blocked", #blasted.blockers == 0,
+        "got " .. tostring(#blasted.blockers))
+
+      local order
+      for _, spec in ipairs(blasted.specs) do
+        if spec.kind == "deconstruct" then order = spec end
+      end
+      check("the removal is the cliff itself", order and order.entity == cliff)
+
+      -- The same order a deconstruction planner gives, so the robots treat it
+      -- the same way.
+      local created = place.execute(surface, force, nil, blasted.specs)
+      check("the cliff is ordered deconstructed", cliff.to_be_deconstructed(),
+        "created " .. tostring(created))
+      check("every belt ghost lands over the marked cliff", created == 31,
+        "created " .. tostring(created))
+
+      for _, ghost in pairs(surface.find_entities_filtered {
+        area = { { BX - 2, BY - 2 }, { BX + 14, BY + 6 } }, name = "entity-ghost",
+      }) do
+        ghost.destroy()
+      end
+      cliff.cancel_deconstruction(force)
+    end
+
+    player_force.cliff_deconstruction_enabled = had_explosives
+    if cliff.valid then cliff.destroy { do_cliff_correction = false } end
+  end
+
+  ----------------------------------------------------------------------------
   line("--- probe selection priority ---")
 
   -- These two facts are what keep the tracker from taking the cursor off the
