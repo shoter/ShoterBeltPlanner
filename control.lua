@@ -165,10 +165,13 @@ script.on_event("beltplanner-cycle-belt-back", function(event)
   planner_gui.refresh(player)
 end)
 
--- The tier buttons grey out whatever the force cannot build yet, which is read
--- from the force's recipes and so goes stale the moment a belt technology
--- finishes - or is reversed. Every open window on the force is refreshed, not
--- only the researcher's: research is shared.
+-- The tier buttons grey out whatever the force cannot build yet, and the "Blow
+-- up cliffs" switch is only live once cliff explosives are researched; both are
+-- read from the force and so go stale the moment a technology finishes - or is
+-- reversed. Every open window on the force is refreshed, not only the
+-- researcher's: research is shared. Every technology is handled rather than only
+-- the belt and cliff ones, because a modded technology may carry the same effect
+-- under another name. refresh is a no-op for anyone without the window.
 local function on_research_changed(event)
   local technology = event.research
   if not (technology and technology.valid) then return end
@@ -194,27 +197,6 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
     planner_gui.close(player)
   end
 end)
-
---------------------------------------------------------------------------------
--- research
-
--- The "Blow up cliffs" switch is only live once cliff explosives are researched,
--- and research can finish while someone is standing there with the tool out.
--- The window is rebuilt every time the tool is taken out, so this only matters
--- for a window that is already open; refresh is a no-op for everyone else.
--- Every research is handled rather than only cliff explosives, because a modded
--- technology may carry the same effect under another name.
-local function on_research_changed(event)
-  local technology = event.research
-  if not (technology and technology.valid) then return end
-
-  for _, player in pairs(technology.force.connected_players) do
-    planner_gui.refresh(player)
-  end
-end
-
-script.on_event(defines.events.on_research_finished, on_research_changed)
-script.on_event(defines.events.on_research_reversed, on_research_changed)
 
 --------------------------------------------------------------------------------
 -- quality
@@ -355,11 +337,15 @@ end)
 -- instruction. There is no event for the render mode changing; it is read in
 -- the handlers that already fire while the pointer is being followed, and the
 -- window is only touched when the answer flips. One property read per event.
+--
+-- The remembered answer is written by the window itself, in refresh_status, so
+-- it always says what the window last showed: a window rebuilt while the map
+-- was open would otherwise leave this holding the old answer and swallow the
+-- next flip as "no change".
 local function note_render_mode(player)
   local pdata = session.get(player.index)
   local in_chart = player.render_mode == defines.render_mode.chart
   if pdata.status_in_chart == in_chart then return end
-  pdata.status_in_chart = in_chart
   planner_gui.refresh(player)
 end
 

@@ -588,6 +588,8 @@ local function step_anchor(player, pdata, expected, restored)
   moved.reversed = anchor.reversed
   pdata.anchor = moved
   pdata.preview_tile = nil
+  -- The tally described a run planned from the anchor that has just moved away.
+  set_summary(player, pdata, nil)
   preview.render(player, pdata, moved)
   return true
 end

@@ -9,9 +9,9 @@
 -- tool must not do. Anything in the way therefore stops the run and says what it
 -- was, leaving the decision with the player.
 --
--- Trees, rocks and wild plants are the sole exception, because clearing those is
--- not a guess about intent. A structure the player built is only ever removed
--- when they have asked for it.
+-- Trees, rocks and plants are the sole exception, because clearing those is not
+-- a guess about intent. A structure the player built is only ever removed when
+-- they have asked for it.
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
@@ -151,7 +151,7 @@ end
 
 --- What this entity means for the tile it sits on.
 ---
---- "clear" - trees, rocks and wild plants, always removed: that is what stamping
+--- "clear" - trees, rocks and plants, always removed: that is what stamping
 ---   a vanilla blueprint does, and nobody means to keep a tree standing where
 ---   they just asked for a belt.
 --- "own"   - something the player built, with the clearing option switched off.

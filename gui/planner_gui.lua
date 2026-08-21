@@ -282,7 +282,11 @@ function planner_gui.refresh_status(player, summary)
   -- be followed. Read here directly: there is no event for the render mode
   -- changing, and this is what every caller of refresh wants shown. The tally
   -- goes with it: a count from before the zoom-out would be stale.
-  if player.render_mode == defines.render_mode.chart then
+  local in_chart = player.render_mode == defines.render_mode.chart
+  -- What the window shows is the only truth control.lua's note_render_mode
+  -- needs, so it is recorded here, where the caption is written.
+  pdata.status_in_chart = in_chart
+  if in_chart then
     status.caption = { "beltplanner.gui-status-chart" }
     if cost then
       cost.caption = ""
