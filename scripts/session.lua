@@ -1,13 +1,20 @@
 -- Per-player planning session: what the tool is currently anchored to, and what
 -- each gesture does about it.
 --
--- The state machine is deliberately two states. With no anchor, a selection sets
--- one. With an anchor, a selection commits a run and re-anchors at its far end,
--- which is what lets the player keep clicking to extend.
+-- Three states. With nothing started, a click begins sizing the anchor. While
+-- sizing, the marked area follows the pointer and the next click accepts it.
+-- With an anchor, a click commits a run and re-anchors at its far end, which is
+-- what lets the player keep clicking to extend.
 --
--- The cursor tracker runs for as long as the tool is in hand, not just while a
--- run is open: the opening drag needs a live pointer before any anchor exists.
--- It stops the moment the tool is put away, so probes never outlive the tool.
+-- Sizing is two clicks rather than a drag for a measured reason: Factorio stops
+-- updating LuaControl.selected while a mouse button is held, so the cursor
+-- tracker goes blind for the whole of a drag and an area that grows as it is
+-- drawn is simply not achievable that way. Between two clicks nothing is held
+-- and the pointer is tracked normally. A drag is still accepted, since the area
+-- it reports is the whole answer; it just cannot show itself being made.
+--
+-- The cursor tracker runs for as long as the tool is in hand, not only while a
+-- run is open, and stops the moment the tool is put away.
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
@@ -113,9 +120,22 @@ function session.update_preview(player)
   local last = pdata.preview_tile
   local anchor = pdata.anchor
 
-  -- No anchor yet: if the button is down, this is the opening drag, and the
-  -- squares can be shown as it is being made.
   if not anchor then
+    -- Sizing: the first click has landed and the second has not. No button is
+    -- held, so the pointer is tracked properly and the marked area can follow it
+    -- - which is exactly what a held drag can never do.
+    if pdata.anchor_origin then
+      if last and last.x == tile.x and last.y == tile.y then return end
+      local candidate = geometry.anchor_between(pdata.anchor_origin, tile)
+      if candidate then
+        preview.show_candidate(player, pdata, candidate)
+      end
+      pdata.preview_tile = tile
+      return
+    end
+
+    -- A drag is still allowed, and still completes an anchor in one gesture. It
+    -- cannot grow as it is made, so all it gets is its starting tile marked.
     if not pdata.drag_from then return end
 
     -- A press with no matching release means the selection never happened
@@ -169,12 +189,15 @@ function session.cancel(player, quiet)
   local pdata = session.get(player.index)
   local had_anchor = pdata.anchor ~= nil
 
+  local was_sizing = pdata.anchor_origin ~= nil
+
   preview.clear(pdata)
   pdata.anchor = nil
+  pdata.anchor_origin = nil
   pdata.preview_tile = nil
   pdata.drag_from = nil
 
-  if had_anchor and not quiet then
+  if (had_anchor or was_sizing) and not quiet then
     player.create_local_flying_text { text = { "beltplanner.cancelled" }, create_at_cursor = true }
   end
 end
@@ -217,21 +240,16 @@ local function far_corner(origin, x1, y1, x2, y2)
   }
 end
 
---- A selection with no anchor set: open a run.
-local function set_anchor(player, pdata, area)
-  local anchor, reason = geometry.anchor_from_area(area)
-  if not anchor then
-    preview.say(player, reason)
-    return
-  end
-
+--- Adopt a finished anchor and start planning from it.
+---
+--- Every utility sound named in this file is checked against
+--- data.raw["utility-sounds"].default; an invented name is a hard crash, not a
+--- silent no-op. rail_plan_start is the engine's own "planning tool armed" cue.
+local function accept_anchor(player, pdata, anchor)
   pdata.anchor = anchor
+  pdata.anchor_origin = nil
   pdata.preview_tile = nil
   preview.render(player, pdata, anchor)
-
-  -- Every utility sound named in this file is checked against
-  -- data.raw["utility-sounds"].default; an invented name is a hard crash, not a
-  -- silent no-op. rail_plan_start is the engine's own "planning tool armed" cue.
   player.play_sound { path = "utility/rail_plan_start" }
 end
 
@@ -300,24 +318,64 @@ function session.on_press(player, position)
 end
 
 --- `select` and `alt_select` both land here; alt forces a fresh anchor.
+---
+--- Three states, not two. With nothing started a click begins sizing the anchor
+--- and the marked area then follows the pointer; the next click accepts it. A
+--- dragged rectangle still does both at once, because the area it produces is
+--- already the whole answer -- it just cannot show itself being made.
 function session.on_select(player, area, force_new_anchor)
   local pdata = session.get(player.index)
 
-  -- The drag is over, whatever it produced.
-  if storage.debug_tracker then
+  if storage.debug_tracker and pdata.saw_press then
     player.print({ "beltplanner.drag-report",
       pdata.saw_press and "yes" or "NO",
       pdata.drag_updates or 0 })
   end
+
   pdata.drag_from = nil
   pdata.saw_press = nil
   pdata.preview_tile = nil
 
-  if force_new_anchor or not pdata.anchor then
-    set_anchor(player, pdata, area)
-  else
-    commit(player, pdata, area)
+  if force_new_anchor then
+    pdata.anchor = nil
+    pdata.anchor_origin = nil
   end
+
+  if pdata.anchor then
+    commit(player, pdata, area)
+    return
+  end
+
+  local x1, y1, x2, y2 = geometry.tile_bounds(area)
+
+  if pdata.anchor_origin then
+    -- Second click: the pointer decides how wide the anchor is.
+    local target = far_corner(pdata.anchor_origin, x1, y1, x2, y2)
+    local anchor = geometry.anchor_between(pdata.anchor_origin, target)
+    if anchor then
+      accept_anchor(player, pdata, anchor)
+    else
+      pdata.anchor_origin = nil
+      preview.clear(pdata)
+    end
+    return
+  end
+
+  if x2 > x1 or y2 > y1 then
+    -- A dragged rectangle answers both questions at once.
+    local anchor, reason = geometry.anchor_from_area(area)
+    if not anchor then
+      preview.say(player, reason)
+      return
+    end
+    accept_anchor(player, pdata, anchor)
+    return
+  end
+
+  -- A plain click: start sizing from here.
+  pdata.anchor_origin = { x = x1, y = y1 }
+  preview.show_candidate(player, pdata, geometry.anchor_between(pdata.anchor_origin, pdata.anchor_origin))
+  player.play_sound { path = "utility/gui_click" }
 end
 
 --- Finish the run with a row of splitters instead of belts.

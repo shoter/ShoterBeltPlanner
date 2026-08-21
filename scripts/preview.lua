@@ -246,6 +246,27 @@ function preview.render(player, pdata, anchor, resolved, result, blockers)
   })
 end
 
+--- The anchor being sized: the marked area the next click will accept.
+---
+--- This is the live version of what a drag could never show, because the engine
+--- stops updating the selection the moment a mouse button is held. With two
+--- clicks no button is down while the pointer moves, so this follows properly.
+function preview.show_candidate(player, pdata, anchor)
+  preview.clear(pdata)
+  draw_anchor(player, pdata, anchor)
+
+  local head = geometry.lane_start(anchor, 1)
+  store(pdata, rendering.draw_text {
+    text = { "beltplanner.drag-label", anchor.lanes },
+    target = { head.x + 0.5, head.y - 1.1 },
+    color = ANCHOR_COLOUR,
+    scale = 0.7,
+    alignment = "center",
+    surface = player.surface,
+    players = { player },
+  })
+end
+
 --- Say, at the cursor, why nothing can be drawn.
 ---
 --- Without this a refused plan looks exactly like a broken tool: the belts

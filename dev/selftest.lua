@@ -101,6 +101,55 @@ function selftest.run()
 
   check("zero length is refused", geometry.resolve(anchor, { x = BX, y = BY }) == nil)
 
+  line("--- two-click anchor sizing ---")
+
+  -- Snapped to the longer delta, so the shape is always a legal line and the
+  -- player cannot produce an illegal one however they move.
+  local function sized(ox, oy, cx, cy)
+    return geometry.anchor_between({ x = ox, y = oy }, { x = cx, y = cy })
+  end
+
+  local down = sized(0, 0, 0, 3)
+  check("straight down gives 4 lanes on the x axis",
+    down and down.axis == "x" and down.lanes == 4,
+    string.format("axis %s lanes %s", tostring(down and down.axis), tostring(down and down.lanes)))
+
+  local across = sized(0, 0, 3, 0)
+  check("straight across gives 4 lanes on the y axis",
+    across and across.axis == "y" and across.lanes == 4,
+    string.format("axis %s lanes %s", tostring(across and across.axis), tostring(across and across.lanes)))
+
+  local single = sized(0, 0, 0, 0)
+  check("no movement is a single lane with the axis still open",
+    single and single.axis == nil and single.lanes == 1)
+
+  local wide = sized(0, 0, 5, 2)
+  check("a mostly-horizontal diagonal snaps across",
+    wide and wide.axis == "y" and wide.lanes == 6,
+    string.format("axis %s lanes %s", tostring(wide and wide.axis), tostring(wide and wide.lanes)))
+
+  local tall = sized(0, 0, 2, 5)
+  check("a mostly-vertical diagonal snaps down",
+    tall and tall.axis == "x" and tall.lanes == 6,
+    string.format("axis %s lanes %s", tostring(tall and tall.axis), tostring(tall and tall.lanes)))
+
+  local tie = sized(0, 0, 3, 3)
+  check("an exact diagonal resolves consistently", tie and tie.axis == "x" and tie.lanes == 4,
+    string.format("axis %s lanes %s", tostring(tie and tie.axis), tostring(tie and tie.lanes)))
+
+  local back = sized(0, 0, 0, -3)
+  check("sizing backwards puts the anchor at the far tile",
+    back and back.tile.y == -3 and back.lanes == 4,
+    string.format("tile.y %s lanes %s", tostring(back and back.tile.y), tostring(back and back.lanes)))
+
+  local always_legal = true
+  for dx = -4, 4 do
+    for dy = -4, 4 do
+      if not sized(0, 0, dx, dy) then always_legal = false end
+    end
+  end
+  check("no pointer position can produce an illegal shape", always_legal)
+
   ----------------------------------------------------------------------------
   line("--- cursor tracker geometry ---")
 

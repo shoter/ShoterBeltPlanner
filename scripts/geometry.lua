@@ -66,8 +66,7 @@ geometry.tile_bounds = tile_bounds
 --- side is the run axis (the belt is one tile deep at the start), and the long
 --- side is the width, one lane per tile. A 1x1 selection is legal but leaves the
 --- axis open until the first endpoint decides it.
-function geometry.anchor_from_area(area)
-  local x1, y1, x2, y2 = tile_bounds(area)
+local function anchor_from_tiles(x1, y1, x2, y2)
   local width = x2 - x1 + 1
   local height = y2 - y1 + 1
 
@@ -88,6 +87,27 @@ function geometry.anchor_from_area(area)
     tile = { x = x1, y = y1 },
     reversed = false,
   }
+end
+
+function geometry.anchor_from_area(area)
+  return anchor_from_tiles(tile_bounds(area))
+end
+
+--- The anchor implied by a first click at `origin` and the pointer now at
+--- `cursor`.
+---
+--- Snapped to whichever axis the pointer has travelled furthest along, so the
+--- shape is always a legal line one tile deep and there is no illegal state to
+--- warn about. A tie goes to the vertical - arbitrary, but consistent, and a tie
+--- only happens on an exact diagonal.
+function geometry.anchor_between(origin, cursor)
+  local dx = cursor.x - origin.x
+  local dy = cursor.y - origin.y
+
+  if abs(dy) >= abs(dx) then
+    return anchor_from_tiles(origin.x, min(origin.y, cursor.y), origin.x, max(origin.y, cursor.y))
+  end
+  return anchor_from_tiles(min(origin.x, cursor.x), origin.y, max(origin.x, cursor.x), origin.y)
 end
 
 --- The start tile of lane `index` (1-based). Lanes sit one tile apart across the

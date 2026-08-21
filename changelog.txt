@@ -27,6 +27,12 @@ Date: 2026-08-21
       number of lanes wide and the run straight, and both are refused rather than approximated.
     - Shift+B steps through the belt tiers without leaving the tool.
   Changes:
+    - The starting tiles are set with two clicks rather than a drag: click where the belts start,
+      move out to set how many lanes wide, click again. The marked area follows the pointer the
+      whole time, which a drag can never do -- Factorio stops tracking the pointer entirely while a
+      mouse button is held, so an area drawn by dragging cannot show itself being made. The shape
+      snaps to whichever direction you have moved furthest, so it is always a legal line and there
+      is no wrong shape to warn about. Dragging still works and still sets the anchor in one go.
     - Automatic tunnelling is gone. Choosing how long an underground should be is a guess about
       what the player wanted, and not guessing is the point of this tool, so anything in the way
       now stops the run and says what it was. Placing an underground deliberately will come back

@@ -143,6 +143,8 @@ function planner_gui.refresh(player)
       status.caption = anchor.reversed
           and { "beltplanner.gui-status-reversed", anchor.lanes }
         or { "beltplanner.gui-status", anchor.lanes }
+    elseif pdata.anchor_origin then
+      status.caption = { "beltplanner.gui-status-sizing" }
     else
       status.caption = { "beltplanner.gui-status-idle" }
     end
