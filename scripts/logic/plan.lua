@@ -11,6 +11,7 @@
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
+local cursor_const = require("scripts/cursor/const")
 
 local plan = {}
 
@@ -54,7 +55,11 @@ local function survey(surface, box)
   end
 
   for _, entity in pairs(surface.find_entities_filtered { area = box }) do
-    if entity.valid and not HARMLESS[entity.type] then
+    -- Our own cursor probes are invisible, collide with nothing, and blanket the
+    -- area by design. Surveyed as obstructions they force can_place_entity to be
+    -- consulted on every tile, and that call refuses any tile already holding a
+    -- ghost - so a second run over the first one came back entirely blocked.
+    if entity.valid and not HARMLESS[entity.type] and not cursor_const.by_name[entity.name] then
       local bb = entity.bounding_box
       for x = floor(bb.left_top.x), ceil(bb.right_bottom.x) - 1 do
         for y = floor(bb.left_top.y), ceil(bb.right_bottom.y) - 1 do

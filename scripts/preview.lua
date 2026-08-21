@@ -21,10 +21,6 @@ local LANDFILL_TINT = { 0.9, 0.85, 0.6, 0.45 }
 local ARROW_TINT = { 0.4, 1, 0.5, 0.75 }
 local REMOVE_TINT = { 1, 0.55, 0.2, 0.9 }
 
--- A drag can be flung right across the map, so past this many tiles the
--- per-tile squares give way to a single outline.
-local DRAG_SQUARE_LIMIT = 400
-
 -- Past this many pieces the per-tile sprites are replaced by a line per lane.
 -- Every sprite is destroyed and recreated whenever the cursor crosses a tile, so
 -- an unbounded count would turn mouse movement into a stutter.
@@ -54,19 +50,21 @@ end
 --------------------------------------------------------------------------------
 -- pieces
 
+--- One outline round the whole anchor band rather than a square per lane: a row
+--- of small boxes next to the cursor's own selection box is just noise.
 local function draw_anchor(player, pdata, anchor)
-  for lane = 1, anchor.lanes do
-    local tile = geometry.lane_start(anchor, lane)
-    store(pdata, rendering.draw_rectangle {
-      color = ANCHOR_COLOUR,
-      width = 2,
-      filled = false,
-      left_top = { tile.x + 0.1, tile.y + 0.1 },
-      right_bottom = { tile.x + 0.9, tile.y + 0.9 },
-      surface = player.surface,
-      players = { player },
-    })
-  end
+  local first = geometry.lane_start(anchor, 1)
+  local last = geometry.lane_start(anchor, anchor.lanes)
+
+  store(pdata, rendering.draw_rectangle {
+    color = ANCHOR_COLOUR,
+    width = 3,
+    filled = false,
+    left_top = { math.min(first.x, last.x), math.min(first.y, last.y) },
+    right_bottom = { math.max(first.x, last.x) + 1, math.max(first.y, last.y) + 1 },
+    surface = player.surface,
+    players = { player },
+  })
 end
 
 local function draw_specs(player, pdata, specs)
@@ -223,31 +221,16 @@ function preview.show_drag(player, pdata, from, to)
   local colour = legal and ANCHOR_COLOUR or BLOCKER_COLOUR
   local surface = player.surface
 
-  if width * height <= DRAG_SQUARE_LIMIT then
-    for x = x1, x2 do
-      for y = y1, y2 do
-        store(pdata, rendering.draw_rectangle {
-          color = colour,
-          width = 2,
-          filled = false,
-          left_top = { x + 0.1, y + 0.1 },
-          right_bottom = { x + 0.9, y + 0.9 },
-          surface = surface,
-          players = { player },
-        })
-      end
-    end
-  else
-    store(pdata, rendering.draw_rectangle {
-      color = colour,
-      width = 3,
-      filled = false,
-      left_top = { x1, y1 },
-      right_bottom = { x2 + 1, y2 + 1 },
-      surface = surface,
-      players = { player },
-    })
-  end
+  -- One outline for the whole selection, whatever its size.
+  store(pdata, rendering.draw_rectangle {
+    color = colour,
+    width = 3,
+    filled = false,
+    left_top = { x1, y1 },
+    right_bottom = { x2 + 1, y2 + 1 },
+    surface = surface,
+    players = { player },
+  })
 
   store(pdata, rendering.draw_text {
     text = legal and { "beltplanner.drag-label", math.max(width, height) }

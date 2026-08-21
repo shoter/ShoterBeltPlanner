@@ -24,6 +24,13 @@ Date: 2026-08-21
       depends on: tunnel under obstacles, landfill over water, and clear your own buildings. The
       mod settings are now only the defaults those switches start at.
     - Shift+B steps through the belt tiers without leaving the tool.
+  Bugfixes:
+    - Fixed a second run over the first being refused, and the planner then trying to tunnel under
+      its own belts. The cursor probes were being surveyed as obstructions, which forced a
+      buildability check on every tile, and that check refuses a tile already holding a ghost.
+    - The tool no longer draws a box per tile. The anchor and the opening drag each get one outline
+      round the whole shape, and the cursor probes were shortened to a narrower range of sizes so
+      fewer selection boxes flicker past as the pointer is tracked.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.

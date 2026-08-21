@@ -9,15 +9,20 @@ const.FORCE_NAME  = "beltplanner-tracker"
 -- The tracker is a quadtree of invisible probes. A probe of size 2^pow is
 -- subdivided into SUBDIVISIONS^2 children of size 2^(pow-1) when the cursor
 -- lands on it, so the search narrows one level per tick until it reaches
--- MIN_POW, which is the resolution the cursor position is reported at.
+-- MIN_POW, which is the resolution the cursor position is reported at (one tile).
 const.SUBDIVISIONS = 2
-const.MIN_POW      = -1  -- 2^-1 = 0.5 tiles, i.e. sub-tile precision
-const.MAX_POW      = 6   -- 2^6  = 64 tiles per root probe
+-- The game draws its own selection box round whatever the cursor is over, and
+-- that is always one of these probes while the tool is held. Every level in this
+-- range is therefore a box size the player sees flicker past as the search
+-- narrows, so the range is kept short: one tile is as precise as the planner
+-- ever needs, and 32 still catches the cursor anywhere on screen.
+const.MIN_POW      = 0   -- 2^0 = one tile
+const.MAX_POW      = 5   -- 2^5 = 32 tiles per root probe
 
--- Roots are seeded as a ROOT_SPAN x ROOT_SPAN block centred on the player, so
--- 3 covers 192x192 tiles - far past build range - for nine entities. Re-seeded
--- once the player has walked RESEED_DISTANCE from where the block was centred.
-const.ROOT_SPAN        = 3
+-- Roots are seeded as a ROOT_SPAN x ROOT_SPAN block centred on the player, so 5
+-- covers 160x160 tiles - well past anything on screen - for 25 entities.
+-- Re-seeded once the player has walked RESEED_DISTANCE from the block's centre.
+const.ROOT_SPAN        = 5
 const.RESEED_DISTANCE  = 32
 
 -- A negative power would make a name like "...-tracker--1"; spell it "m1".

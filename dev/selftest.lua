@@ -4,7 +4,9 @@
 
 local geometry = require("scripts/geometry")
 local plan = require("scripts/logic/plan")
+local place = require("scripts/logic/place")
 local belts = require("scripts/belts")
+local cursor_const = require("scripts/cursor/const")
 
 local selftest = {}
 
@@ -266,6 +268,45 @@ function selftest.run()
   check("refusal reason is error-too-big",
     over_reason and over_reason[1] == "beltplanner.error-too-big",
     tostring(over_reason and over_reason[1]))
+
+  ----------------------------------------------------------------------------
+  line("--- replanning over a run already placed ---")
+
+  -- Regression: the tracker blankets the area in probes, and surveying them as
+  -- obstructions forced can_place_entity on every tile. That call refuses a tile
+  -- that already holds a ghost, so a second run over the first came back wholly
+  -- blocked and the planner tried to tunnel under its own belts.
+  local probe_force = game.forces[cursor_const.FORCE_NAME]
+    or game.create_force(cursor_const.FORCE_NAME)
+  local probe = surface.create_entity {
+    name = cursor_const.root.name,
+    position = { BX + 5, BY + 1 },
+    force = probe_force,
+  }
+  check("a root probe covers the whole run", probe ~= nil, cursor_const.root.name)
+
+  local first_pass = plan.build(surface, force, anchor, resolved, options)
+  check("first run plans with probes present", first_pass ~= nil)
+  if first_pass then
+    place.execute(surface, force, nil, first_pass.specs)
+
+    local second_pass, second_reason = plan.build(surface, force, anchor, resolved, options)
+    check("second run over the first is not blocked", second_pass ~= nil,
+      tostring(second_reason and second_reason[1]))
+    if second_pass then
+      local tally = count_kinds(second_pass.specs)
+      check("no tunnels invented over our own ghosts", tally.underground == nil,
+        "got " .. tostring(tally.underground))
+      check("second run still lays 30 belts", tally.belt == 30, "got " .. tostring(tally.belt))
+    end
+
+    for _, ghost in pairs(surface.find_entities_filtered {
+      area = { { BX - 2, BY - 2 }, { BX + 14, BY + 6 } }, name = "entity-ghost",
+    }) do
+      ghost.destroy()
+    end
+  end
+  if probe and probe.valid then probe.destroy() end
 
   ----------------------------------------------------------------------------
   line("--- corners ---")
