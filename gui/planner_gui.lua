@@ -66,6 +66,17 @@ local function checkbox(option, caption, tooltip, state)
   }
 end
 
+--- Whether a tier button is clickable for this player, and what it says when
+--- hovered. A tier the force has not researched stays visible but greyed out,
+--- so the player can see what is coming without being handed a ghost nobody on
+--- the force can build yet.
+local function tier_availability(player, tier)
+  if belts.unlocked(player.force, tier.belt) then
+    return true, { "entity-name." .. tier.belt }
+  end
+  return false, { "beltplanner.gui-tier-locked", { "entity-name." .. tier.belt } }
+end
+
 --- Rebuild the window from scratch. Cheap enough at this size, and far less
 --- error-prone than patching individual elements as options change.
 function planner_gui.open(player)
@@ -96,11 +107,13 @@ function planner_gui.open(player)
 
   local chosen = pdata.tier or (belts.default() and belts.default().belt)
   for _, tier in ipairs(belts.all()) do
+    local enabled, tooltip = tier_availability(player, tier)
     flib_gui.add(elems.beltplanner_tiers, {
       type = "sprite-button",
       style = "slot_button",
       sprite = "item/" .. tier.item,
-      tooltip = { "entity-name." .. tier.belt },
+      tooltip = tooltip,
+      enabled = enabled,
       toggled = tier.belt == chosen,
       tags = { belt = tier.belt },
       handler = { [defines.events.on_gui_click] = on_tier_clicked },
@@ -115,8 +128,9 @@ function planner_gui.close(player)
   if existing then existing.destroy() end
 end
 
---- Update the parts that change without rebuilding: the chosen tier and the
---- one-line summary of the run in progress.
+--- Update the parts that change without rebuilding: the chosen tier, which
+--- tiers the force has researched, and the one-line summary of the run in
+--- progress.
 function planner_gui.refresh(player)
   local window = player.gui.left[ROOT]
   if not window then return end
@@ -133,6 +147,14 @@ function planner_gui.refresh(player)
   if tiers then
     for _, button in pairs(tiers.children) do
       button.toggled = button.tags.belt == chosen
+      -- Research can finish or be reversed while the window is open, so the
+      -- greying is re-read here rather than fixed when the button was made.
+      local tier = belts.get(button.tags.belt)
+      if tier then
+        local enabled, tooltip = tier_availability(player, tier)
+        button.enabled = enabled
+        button.tooltip = tooltip
+      end
     end
   end
 
@@ -148,6 +170,16 @@ function planner_gui.refresh(player)
     else
       status.caption = { "beltplanner.gui-status-idle" }
     end
+  end
+end
+
+--- Refresh the window of everyone on a force who has it open. Research is a
+--- property of the force, so when a belt technology finishes - or is reversed -
+--- every window on that force is out of date at once. refresh itself returns
+--- straight away for a player without the window.
+function planner_gui.refresh_force(force)
+  for _, player in pairs(force.connected_players) do
+    planner_gui.refresh(player)
   end
 end
 

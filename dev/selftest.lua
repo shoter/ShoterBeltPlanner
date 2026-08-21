@@ -126,6 +126,96 @@ function selftest.run()
     belts.preview_animation("beltplanner-not-a-belt", defines.direction.east) == nil)
 
   ----------------------------------------------------------------------------
+  line("--- research-aware tiers ---")
+
+  -- The picker and Shift+B both lean on belts.unlocked, which reads the force's
+  -- recipes rather than assuming a recipe is named after its item. Vanilla
+  -- starts with the yellow belt enabled and every faster one behind research;
+  -- a modded test environment may not, so the expected answer is read off the
+  -- force's own recipes rather than hard-coded.
+  local test_force = game.forces[force]
+  local order = belts.all()
+
+  local function force_can_craft(f, item)
+    local found = prototypes.get_recipe_filtered {
+      { filter = "has-product-item", elem_filters = { { filter = "name", name = item } } },
+    }
+    for name in pairs(found) do
+      local recipe = f.recipes[name]
+      if recipe and recipe.enabled then return true end
+    end
+    return false
+  end
+
+  if belts.get("transport-belt") then
+    check("the starting belt is unlocked on a fresh force",
+      belts.unlocked(test_force, "transport-belt") == true)
+  end
+
+  local fastest = order[#order]
+  local fastest_expected = force_can_craft(test_force, fastest.item)
+  check("the fastest tier follows its recipe on a fresh force (" .. fastest.belt .. ")",
+    belts.unlocked(test_force, fastest.belt) == fastest_expected,
+    "unlocked says " .. tostring(belts.unlocked(test_force, fastest.belt))
+    .. ", recipes say " .. tostring(fastest_expected))
+
+  check("cycling forward from the default lands on something buildable",
+    belts.unlocked(test_force, belts.step(test_force, tier.belt, 1).belt))
+  check("cycling back from the default lands on something buildable",
+    belts.unlocked(test_force, belts.step(test_force, tier.belt, -1).belt))
+
+  -- A throwaway force whose belt recipes can be switched on and off at will,
+  -- so the skipping and the nothing-unlocked fallback can be pinned without
+  -- depending on what the mod set happens to research at the start.
+  local lab = game.forces["beltplanner-selftest-lab"] or game.create_force("beltplanner-selftest-lab")
+
+  local function set_lab_recipes(item, enabled)
+    local found = prototypes.get_recipe_filtered {
+      { filter = "has-product-item", elem_filters = { { filter = "name", name = item } } },
+    }
+    for name in pairs(found) do
+      local recipe = lab.recipes[name]
+      if recipe then recipe.enabled = enabled end
+    end
+  end
+
+  for _, t in ipairs(order) do set_lab_recipes(t.item, false) end
+  check("with nothing researched every tier is offered rather than none",
+    belts.unlocked(lab, tier.belt) and belts.unlocked(lab, fastest.belt))
+
+  if #order >= 2 then
+    local nothing_step = belts.step(lab, tier.belt, 1)
+    check("and cycling then behaves as it always did",
+      nothing_step ~= nil and nothing_step.belt == order[2].belt,
+      tostring(nothing_step and nothing_step.belt))
+
+    set_lab_recipes(tier.item, true)
+    check("one recipe enabled: that tier is unlocked", belts.unlocked(lab, tier.belt) == true)
+    check("one recipe enabled: the fastest is not", belts.unlocked(lab, fastest.belt) == false)
+
+    local only = belts.step(lab, tier.belt, 1)
+    check("cycling with one tier unlocked stays on it",
+      only ~= nil and only.belt == tier.belt, tostring(only and only.belt))
+
+    set_lab_recipes(fastest.item, true)
+    local forward = belts.step(lab, tier.belt, 1)
+    check("cycling forward skips the locked middle tiers",
+      forward ~= nil and forward.belt == fastest.belt, tostring(forward and forward.belt))
+    local backward = belts.step(lab, tier.belt, -1)
+    check("cycling back wraps round to the fastest unlocked tier",
+      backward ~= nil and backward.belt == fastest.belt, tostring(backward and backward.belt))
+
+    -- Research reversed under the player's choice: the choice is not taken
+    -- away, but the next step moves off it.
+    set_lab_recipes(fastest.item, false)
+    local off_locked = belts.step(lab, fastest.belt, 1)
+    check("cycling from a tier that has since locked steps off it",
+      off_locked ~= nil and off_locked.belt == tier.belt, tostring(off_locked and off_locked.belt))
+  end
+
+  game.merge_forces(lab, test_force)
+
+  ----------------------------------------------------------------------------
   line("--- two-click anchor sizing ---")
 
   -- Snapped to the longer delta, so the shape is always a legal line and the

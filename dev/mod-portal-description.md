@@ -13,7 +13,7 @@ You mark where the belts start and how wide the bundle is, then click where you 
 - **Ghosts only.** Nothing is built for real and nothing is taken from your inventory. One press of undo removes an entire run — landfill, felled trees and all.
 - **A preview that means it.** What you see under the cursor is drawn from the same list the click commits, so it is not an impression of the result, it is the result. Blocked tiles are outlined in red before you commit to anything.
 - **Landfill over water,** as tile ghosts. The water itself is never modified.
-- **Any belt.** Tiers are read from the prototypes, so modded belts are picked up automatically. Shift+B steps through them without leaving the tool.
+- **Any belt you can build.** Tiers are read from the prototypes, so modded belts are picked up automatically, and tiers your force has not researched yet are greyed out rather than offered. Shift+B steps through them without leaving the tool; Ctrl+Shift+B steps back.
 
 ## How to use it
 
