@@ -233,6 +233,21 @@ function selftest.run()
       check("no tunnel dug for a tree", tally.underground == nil,
         "got " .. tostring(tally.underground))
       check("all 30 tiles still get belt", tally.belt == 30, "got " .. tostring(tally.belt))
+
+      -- The preview indexes spec.name for everything except a deconstruct,
+      -- which carries a LuaEntity instead. Assuming otherwise crashed the
+      -- summarised preview, so the shape is pinned here.
+      local shape_ok, detail = true, ""
+      for _, spec in ipairs(tree_result.specs) do
+        if not spec.position then
+          shape_ok, detail = false, spec.kind .. " has no position"
+        elseif spec.kind == "deconstruct" then
+          if spec.entity == nil then shape_ok, detail = false, "deconstruct has no entity" end
+        elseif spec.name == nil then
+          shape_ok, detail = false, spec.kind .. " has no name"
+        end
+      end
+      check("every spec has the shape the preview expects", shape_ok, detail)
     end
     if tree and tree.valid then tree.destroy() end
   else

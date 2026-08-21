@@ -8,15 +8,59 @@
 -- The undo bookkeeping is the whole reason this is its own module.
 -- `undo_index = 0` opens a fresh undo item and `1` appends to the newest one, so
 -- opening once and appending for everything else collapses a segment of any size
--- into a single Ctrl+Z, landfill included.
+-- into a single Ctrl+Z, landfill and felled trees included.
 
 local place = {}
 
+local BELT_GHOSTS = {
+  ["transport-belt"] = true,
+  ["underground-belt"] = true,
+}
+
+--- Does this ghost already say exactly what the spec wants?
+local function matches(existing, spec)
+  if existing.ghost_name ~= spec.name then return false end
+  if existing.direction ~= spec.direction then return false end
+  if spec.type and existing.belt_to_ground_type ~= spec.type then return false end
+  return true
+end
+
+--- Runs chain by re-anchoring on the last tile placed, so one tile of every new
+--- run already holds the previous run's ghost. Leaving it alone is right when
+--- nothing changed, but after a belt-tier change or a direction flip it would
+--- strand a single tile of the old run in the middle of the new one - and
+--- create_entity will not overwrite it. Only our own belt ghosts are replaced;
+--- anything else in the way is left for the player to deal with.
+---
+--- Returns `satisfied` (the spec is already in place, skip it) and `destroyed`
+--- (an undo action was taken, so the undo item is now open).
+local function reconcile_existing(surface, spec, force_name, player, undo_index)
+  local existing = surface.find_entity("entity-ghost", spec.position)
+  if not (existing and existing.valid) then return false, false end
+
+  if matches(existing, spec) then return true, false end
+
+  if BELT_GHOSTS[existing.ghost_type] and existing.force.name == force_name then
+    existing.destroy { player = player, undo_index = undo_index }
+    return false, player ~= nil
+  end
+
+  return false, false
+end
+
 function place.execute(surface, force, player, specs)
   local created = 0
-  -- Stays true until something actually lands: if the first create_entity fails,
-  -- the undo item was never opened and the next spec has to open it instead.
+  -- Stays true until something actually lands: if the first action fails, the
+  -- undo item was never opened and the next spec has to open it instead.
   local needs_new_undo_item = true
+  local force_name = type(force) == "string" and force or force.name
+
+  -- Undo items live on a player, so a scripted or robot-driven call has no queue
+  -- to bookkeep and must not ask for one.
+  local function undo_index()
+    if not player then return nil end
+    return needs_new_undo_item and 0 or 1
+  end
 
   for _, spec in ipairs(specs) do
     -- Clearing the way is an order, not a placement, but it takes the same
@@ -25,9 +69,7 @@ function place.execute(surface, force, player, specs)
     if spec.kind == "deconstruct" then
       local entity = spec.entity
       if entity and entity.valid and not entity.to_be_deconstructed() then
-        local ordered = entity.order_deconstruction(
-          force, player, player and (needs_new_undo_item and 0 or 1) or nil)
-        if ordered then
+        if entity.order_deconstruction(force, player, undo_index()) then
           created = created + 1
           needs_new_undo_item = false
         end
@@ -43,6 +85,12 @@ function place.execute(surface, force, player, specs)
         position = spec.position,
       }
     else
+      local satisfied, destroyed = reconcile_existing(
+        surface, spec, force_name, player, undo_index())
+      -- A destroy already opened the undo item, so the create that follows must
+      -- append rather than opening a second one and costing two Ctrl+Z.
+      if destroyed then needs_new_undo_item = false end
+      if satisfied then goto continue end
       args = {
         name = "entity-ghost",
         inner_name = spec.name,
@@ -56,11 +104,9 @@ function place.execute(surface, force, player, specs)
     end
 
     args.force = force
-    -- Undo items live on a player, so a scripted or robot-driven call has no
-    -- queue to bookkeep and must not ask for one.
     if player then
       args.player = player
-      args.undo_index = needs_new_undo_item and 0 or 1
+      args.undo_index = undo_index()
     end
     args.create_build_effect_smoke = false
     args.raise_built = true

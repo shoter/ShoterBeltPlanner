@@ -31,6 +31,13 @@ Date: 2026-08-21
     - The tool no longer draws a box per tile. The anchor and the opening drag each get one outline
       round the whole shape, and the cursor probes were shortened to a narrower range of sizes so
       fewer selection boxes flicker past as the pointer is tracked.
+    - Fixed a crash while previewing a long run through trees. Past a few hundred pieces the preview
+      switches to a summarised form, and that form assumed every piece named a prototype; something
+      marked for removal names an entity instead. Both forms now share one place that decides how a
+      piece is drawn.
+    - Fixed clicking the tool window arming a drag from wherever the window sat over the map.
+    - Fixed the tile shared between one run and the next keeping the old belt tier or the old
+      direction after changing either mid-chain.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.

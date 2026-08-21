@@ -67,55 +67,64 @@ local function draw_anchor(player, pdata, anchor)
   })
 end
 
+--- Sprite and tint for anything that is not a plain belt.
+---
+--- Shared by both the detailed and the summarised preview, so a spec kind can no
+--- longer be handled in one and forgotten in the other. That is exactly how a
+--- deconstruct spec - which carries a LuaEntity rather than a prototype name -
+--- reached an "item/" .. spec.name and crashed the summarised path.
+local function marker_for(spec)
+  local kind = spec.kind
+  if kind == "deconstruct" then
+    return "utility/cross_select", REMOVE_TINT, 0.55
+  elseif kind == "landfill" then
+    return "item/landfill", LANDFILL_TINT, 0.5
+  elseif kind == "underground" then
+    return "item/" .. spec.name, UNDERGROUND_TINT, 0.62
+  end
+  return nil
+end
+
 local function draw_specs(player, pdata, specs)
   local surface = player.surface
   local belt_index = 0
 
   for _, spec in ipairs(specs) do
-    if spec.kind == "deconstruct" then
+    local sprite, tint, scale = marker_for(spec)
+
+    if sprite then
       store(pdata, rendering.draw_sprite {
-        sprite = "utility/cross_select",
+        sprite = sprite,
         target = spec.position,
-        x_scale = 0.55, y_scale = 0.55,
-        tint = REMOVE_TINT,
-        surface = surface,
-        players = { player },
-      })
-    elseif spec.kind == "landfill" then
-      store(pdata, rendering.draw_sprite {
-        sprite = "item/landfill",
-        target = spec.position,
-        x_scale = 0.5, y_scale = 0.5,
-        tint = LANDFILL_TINT,
+        x_scale = scale, y_scale = scale,
+        tint = tint,
         surface = surface,
         players = { player },
       })
     else
-      local underground = spec.kind == "underground"
       store(pdata, rendering.draw_sprite {
         sprite = "item/" .. spec.name,
         target = spec.position,
-        x_scale = underground and 0.62 or 0.5,
-        y_scale = underground and 0.62 or 0.5,
-        tint = underground and UNDERGROUND_TINT or BELT_TINT,
+        x_scale = 0.5, y_scale = 0.5,
+        tint = BELT_TINT,
         surface = surface,
         players = { player },
       })
-
-      -- Item icons carry no facing, so direction is shown by a separate arrow
-      -- rather than by rotating the icon, which would just look broken.
       belt_index = belt_index + 1
-      if underground or belt_index % ARROW_EVERY == 1 then
-        store(pdata, rendering.draw_sprite {
-          sprite = "utility/indication_arrow",
-          target = spec.position,
-          orientation = orientation_of(spec.direction),
-          x_scale = 0.5, y_scale = 0.5,
-          tint = ARROW_TINT,
-          surface = surface,
-          players = { player },
-        })
-      end
+    end
+
+    -- Item icons carry no facing, so direction is shown by a separate arrow
+    -- rather than by rotating the icon, which would just look broken.
+    if spec.direction and (spec.kind == "underground" or belt_index % ARROW_EVERY == 1) then
+      store(pdata, rendering.draw_sprite {
+        sprite = "utility/indication_arrow",
+        target = spec.position,
+        orientation = orientation_of(spec.direction),
+        x_scale = 0.5, y_scale = 0.5,
+        tint = ARROW_TINT,
+        surface = surface,
+        players = { player },
+      })
     end
   end
 end
@@ -142,14 +151,16 @@ local function draw_summary(player, pdata, anchor, resolved, specs)
     end
   end
 
-  -- Tunnels and landfill still matter at this scale, so they stay visible.
+  -- Tunnels, landfill and anything to be removed still matter at this scale, so
+  -- they stay visible even when the belts are reduced to lines.
   for _, spec in ipairs(specs) do
-    if spec.kind ~= "belt" then
+    local sprite, tint, scale = marker_for(spec)
+    if sprite then
       store(pdata, rendering.draw_sprite {
-        sprite = "item/" .. spec.name,
+        sprite = sprite,
         target = spec.position,
-        x_scale = 0.55, y_scale = 0.55,
-        tint = spec.kind == "underground" and UNDERGROUND_TINT or LANDFILL_TINT,
+        x_scale = scale, y_scale = scale,
+        tint = tint,
         surface = surface,
         players = { player },
       })

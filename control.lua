@@ -46,6 +46,10 @@ end
 -- bound to plain and Ctrl left-click, so they fire on every click in the game
 -- and must do nothing at all the rest of the time.
 local function on_press(event, ctrl)
+  -- A click on our own window is still a left-click, and without this it would
+  -- arm a drag from wherever the window happens to sit on the map.
+  if event.in_gui then return end
+
   local player = game.get_player(event.player_index)
   if not (player and holding_tool(player)) then return end
   session.on_press(player, event.cursor_position, ctrl)
