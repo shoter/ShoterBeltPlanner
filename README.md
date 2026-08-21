@@ -63,6 +63,8 @@ depends on where the trees landed will pass once and fail the next time.
 | `scripts/geometry.lua` | pure tile geometry — no world access, no storage, no side effects |
 | `scripts/logic/plan.lua` | turns two endpoints into a list of things to place |
 | `scripts/logic/place.lua` | commits that list as ghosts, in one undo item |
+| `scripts/belts.lua`, `scripts/qualities.lua` | belt tier and quality registries, built from the prototypes each load |
+| `scripts/tally.lua` | what a click will cost, counted off the spec list; the label and the window both read it |
 | `scripts/cursor/` | the cursor tracker |
 | `scripts/preview.lua` | everything the player sees that is not an entity |
 | `gui/` | the tool window |
@@ -91,7 +93,8 @@ mod's main promise, and it is the first thing to protect in any change.
 
 **Everything is a ghost.** Nothing is built for real and no item is consumed, and
 `undo_index` collapses a whole run into a single Ctrl+Z — felled trees and landfill
-included. Landfill is placed as tile ghosts, so water is never modified directly.
+included. Water is covered with tile ghosts of whatever the terrain's own cover tile is —
+landfill on Nauvis, foundation on lava, ice platform on Aquilo — so water is never modified directly.
 
 One more worth recording, because it was a real bug: **what obstructs a belt is decided
 by collision-mask intersection, not by entity type.** A list of harmless types is a
