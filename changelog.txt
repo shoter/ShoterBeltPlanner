@@ -1,4 +1,56 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 2026-08-21
+  Features:
+    - Pointing at any row the bundle already covers now extends it straight, so a wide bus carries
+      on from anywhere across its width instead of only from lane 1's exact row. No corner is
+      possible inside the bundle's own width, so this is a definition of the target, not a guess.
+    - Ghosts can be placed at a chosen quality. Where quality is in play the tool window shows a
+      row of quality buttons, the vanilla quality-cycling controls step through them while the
+      tool is held, and the preview label names any quality other than normal. Without quality
+      nothing changes.
+    - A "Blow up cliffs" switch in the tool window. With it on, cliffs in the way are marked for
+      deconstruction the way a deconstruction planner marks them; with it off a run that meets a
+      cliff is refused and the message names the switch. Greyed out until cliff explosives are
+      researched, and the planner checks the research too, so a stale window cannot order what the
+      robots would ignore. A per-player setting gives the switch its default for new players.
+    - Undo and redo move the anchor with them. Ctrl+Z while holding the tool steps the run back to
+      where the removed segment started, so the next click lays it again; redo steps it forward.
+      The anchor only moves if you have not clicked on since.
+    - The label at the cursor and the tool window say what a click will cost - belts, splitters,
+      landfill, trees, rocks and plants to fell, cliffs to blow up, buildings of yours to remove -
+      and how many items a second the bundle will carry. The window's status follows the preview
+      live rather than only updating on clicks.
+    - Ctrl+Shift+B steps back through the belt tiers, so overshooting no longer costs a full lap.
+  Changes:
+    - Water is bridged with the terrain's own cover tile instead of always landfill: foundation on
+      Vulcanus lava and Fulgora's oil ocean, ice platform on Aquilo, platform foundation in space.
+      The "Landfill over water" switch keeps its name; what it places is whatever the tile
+      prototype says covers it.
+    - Belt tiers your force has not researched are greyed out in the tool window and skipped by
+      Shift+B, so you are never handed a ghost nobody on the force can build. The window updates
+      as research finishes or is reversed. A mod set that leaves no tier researched offers them
+      all.
+    - Gleba's plants (yumako trees, jellystems) are cleared like trees instead of stopping the run.
+      The engine keeps every plant on the neutral force, even one an agricultural tower planted, so
+      there is no crop to tell apart from a weed.
+    - Extending a run after changing quality replaces the shared tile's ghost at the new quality,
+      the same way a belt tier change already did.
+    - Remote view: the tool follows the player across controller changes, rebuilding its pointer
+      tracking where the view has gone. A run on the same surface is kept; another surface cancels
+      it as before. On the zoomed-out map, where nothing can be selected, the tracker stops
+      re-seeding and the window says "Zoom in to plan".
+    - The "Turn is too shallow" refusal is gone. It could only ever fire for a target inside the
+      bundle's own width, and those are now straight runs.
+    - The removal marker in the preview is scaled to the entity's footprint, so a cliff marked for
+      removal gets a mark the size of the cliff.
+  Bugfixes:
+    - Water-layer terrain that nothing can cover (the map edge, for one) now stops the run instead
+      of receiving a landfill ghost that could never be built, whatever the switch says.
+    - A belt ghost at any quality other than normal was invisible to the check that replaces the
+      shared tile between one run and the next, because a bare name in find_entity means "normal
+      quality only". Found while adding quality; fixed for every lookup the tool makes.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.0
 Date: 2026-08-21
   Features:
