@@ -15,6 +15,7 @@ local place = {}
 local BELT_GHOSTS = {
   ["transport-belt"] = true,
   ["underground-belt"] = true,
+  ["splitter"] = true,
 }
 
 --- Does this ghost already say exactly what the spec wants?

@@ -13,9 +13,28 @@ local belts = {}
 
 local cache
 
+-- Belt speeds are floats, so they are keyed as fixed-precision strings rather
+-- than trusted to compare equal as numbers.
+local function speed_key(speed)
+  return string.format("%.8f", speed or 0)
+end
+
 local function build()
   local tiers = {}
   local order = {}
+
+  -- A splitter has no link back to its belt - there is no related_splitter - so
+  -- it is matched on throughput instead: a tier's splitter is the one that moves
+  -- items at the same rate. That holds for vanilla and for any mod shipping a
+  -- matched belt family, and a tier simply has no splitter if nothing matches.
+  local splitter_by_speed = {}
+  for name, proto in pairs(prototypes.get_entity_filtered { { filter = "type", type = "splitter" } }) do
+    local items = proto.items_to_place_this
+    if items and #items > 0 then
+      local key = speed_key(proto.belt_speed)
+      splitter_by_speed[key] = splitter_by_speed[key] or name
+    end
+  end
 
   for name, proto in pairs(prototypes.get_entity_filtered { { filter = "type", type = "transport-belt" } }) do
     -- A belt with nothing to place it with is scenery or a mod's internal
@@ -31,6 +50,7 @@ local function build()
         underground = underground and underground.name or nil,
         -- How far apart the two ends of a pair may sit, in tiles.
         max_distance = underground and underground.max_underground_distance or nil,
+        splitter = splitter_by_speed[speed_key(proto.belt_speed)],
       }
 
       tiers[name] = tier

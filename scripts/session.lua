@@ -234,7 +234,7 @@ end
 
 --- A selection with an anchor set: plan, commit, and move the anchor to the far
 --- end so the next click continues from there.
-local function commit(player, pdata, area)
+local function commit(player, pdata, area, splitters)
   local anchor = pdata.anchor
   local x1, y1, x2, y2 = geometry.tile_bounds(area)
   local target = far_corner(anchor.tile, x1, y1, x2, y2)
@@ -248,6 +248,7 @@ local function commit(player, pdata, area)
   -- Ctrl on the click that opened this selection means "clear whatever I built
   -- that is in the way too", not just trees and rocks.
   local options = options_for(player, pdata, ctrl_held(pdata))
+  options.splitters = splitters
   local result, failure, blockers = plan.build(player.surface, player.force, anchor, resolved, options)
 
   if not result then
@@ -303,6 +304,24 @@ function session.on_select(player, area, force_new_anchor)
   else
     commit(player, pdata, area)
   end
+end
+
+--- Finish the run with a row of splitters instead of belts.
+---
+--- Otherwise identical to an ordinary commit, so the belts leading up to the
+--- splitters, the tunnels and the clearing all behave exactly as they would
+--- have; only the last tile of the run changes.
+function session.on_splitter(player, area)
+  local pdata = session.get(player.index)
+  pdata.drag_from = nil
+  pdata.preview_tile = nil
+
+  if not pdata.anchor then
+    preview.say(player, { "beltplanner.error-no-run" })
+    return
+  end
+
+  commit(player, pdata, area, true)
 end
 
 return session

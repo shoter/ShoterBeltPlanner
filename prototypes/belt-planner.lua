@@ -63,6 +63,8 @@ data:extend({
     alt_select = selection_mode({ 90, 160, 240 }, "copy"),
     -- cancel the run
     reverse_select = selection_mode({ 230, 80, 80 }, "not-allowed"),
+    -- finish the run with a row of splitters
+    alt_reverse_select = selection_mode({ 150, 200, 255 }, "pair"),
   },
 
   {

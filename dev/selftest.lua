@@ -61,6 +61,7 @@ local function clear_area(surface, x1, y1, x2, y2)
 end
 
 function selftest.run()
+  local bend -- shared between the corner and splitter sections
   local surface = game.surfaces[1]
   local force = "player"
   local BX, BY = 2000, 2000
@@ -326,7 +327,7 @@ function selftest.run()
   ----------------------------------------------------------------------------
   line("--- corners ---")
 
-  local bend = geometry.resolve(anchor, { x = BX + 10, y = BY + 6 })
+  bend = geometry.resolve(anchor, { x = BX + 10, y = BY + 6 })
   check("off-axis target resolves to a curve", bend ~= nil and bend.curved == true)
 
   if bend then
@@ -391,6 +392,74 @@ function selftest.run()
   check("refusal names the cramped corner",
     behind_reason and behind_reason[1] == "beltplanner.error-corner-too-close",
     tostring(behind_reason and behind_reason[1]))
+
+  ----------------------------------------------------------------------------
+  line("--- splitters ---")
+
+  check("the default belt has a matching splitter", tier.splitter ~= nil,
+    "tier " .. tier.belt)
+
+  local split_options = {
+    tier = tier, tunnels = true, landfill = false, max_tiles = 10000, splitters = true,
+  }
+
+  -- Splitters take a lane pair, so this needs an even bundle of its own.
+  local pair = geometry.anchor_from_area(area(BX, BY + 20, BX + 1, BY + 22))
+  check("2-lane anchor for the splitter tests", pair ~= nil and pair.lanes == 2,
+    "got " .. tostring(pair and pair.lanes))
+
+  if pair then
+    local straight = geometry.resolve(pair, { x = BX + 9, y = BY + 20 })
+    local split_result, split_reason = plan.build(surface, force, pair, straight, split_options)
+    check("a run can end in splitters", split_result ~= nil,
+      tostring(split_reason and split_reason[1]))
+
+    if split_result then
+      local tally = count_kinds(split_result.specs)
+      check("one splitter for the pair", tally.splitter == 1, "got " .. tostring(tally.splitter))
+      -- 2 lanes x 10 tiles, less the two end tiles the splitter takes over.
+      check("18 belts lead up to it", tally.belt == 18, "got " .. tostring(tally.belt))
+
+      local splitter
+      for _, spec in ipairs(split_result.specs) do
+        if spec.kind == "splitter" then splitter = spec end
+      end
+      -- Two tiles wide, so it sits on the boundary between the lanes.
+      check("splitter straddles both lanes",
+        splitter.position.x == BX + 9.5 and splitter.position.y == BY + 21,
+        string.format("got %s,%s", splitter.position.x, splitter.position.y))
+      check("splitter faces the flow", splitter.direction == defines.direction.east,
+        "got " .. tostring(splitter.direction))
+    end
+
+    pair.reversed = true
+    local back_split = plan.build(surface, force, pair, straight, split_options)
+    if back_split then
+      for _, spec in ipairs(back_split.specs) do
+        if spec.kind == "splitter" then
+          check("reversed splitter faces west", spec.direction == defines.direction.west,
+            "got " .. tostring(spec.direction))
+        end
+      end
+    else
+      check("reversed run can end in splitters", false)
+    end
+    pair.reversed = false
+  end
+
+  local odd, odd_reason = plan.build(surface, force, anchor, resolved, split_options)
+  check("an odd bundle is refused", odd == nil)
+  check("refusal names the odd bundle",
+    odd_reason and odd_reason[1] == "beltplanner.error-splitter-odd",
+    tostring(odd_reason and odd_reason[1]))
+
+  if bend then
+    local curved_split, curved_reason = plan.build(surface, force, anchor, bend, split_options)
+    check("splitters on a corner are refused", curved_split == nil)
+    check("refusal names the corner",
+      curved_reason and curved_reason[1] == "beltplanner.error-splitter-corner",
+      tostring(curved_reason and curved_reason[1]))
+  end
 
   ----------------------------------------------------------------------------
   line("--- chaining ---")

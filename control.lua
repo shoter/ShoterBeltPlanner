@@ -80,6 +80,15 @@ script.on_event(defines.events.on_player_alt_selected_area, function(event)
   on_selected(event, true)
 end)
 
+-- Shift + right-drag: end the run with splitters rather than belts.
+script.on_event(defines.events.on_player_alt_reverse_selected_area, function(event)
+  if event.item ~= TOOL then return end
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  session.on_splitter(player, event.area)
+  planner_gui.refresh(player)
+end)
+
 script.on_event(defines.events.on_player_reverse_selected_area, function(event)
   if event.item ~= TOOL then return end
   local player = game.get_player(event.player_index)

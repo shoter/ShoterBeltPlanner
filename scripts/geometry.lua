@@ -265,6 +265,21 @@ function geometry.lane_runs(anchor, resolved, index)
   return runs
 end
 
+--- The far tile of one lane: where the run ends as DRAWN, which is where the
+--- player pointed, regardless of which way items end up flowing along it.
+--- Straight runs only - the lanes of a corner end staggered, so a row across
+--- them would not line up.
+function geometry.lane_end(anchor, resolved, index)
+  if resolved.curved then return nil end
+
+  local axis = resolved.axis
+  local along0, cross0 = of_tile(axis, anchor.tile)
+  return to_tile(
+    axis,
+    along0 + resolved.along_sign * (resolved.length - 1),
+    cross0 + index - 1)
+end
+
 --------------------------------------------------------------------------------
 -- derived facts
 

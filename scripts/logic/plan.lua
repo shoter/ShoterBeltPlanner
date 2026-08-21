@@ -259,6 +259,71 @@ local function plan_run(context, run, water, occupants, specs, blockers)
 end
 
 --------------------------------------------------------------------------------
+-- splitters
+
+--- Replace the belts on the final tile of the run with a row of splitters.
+---
+--- A splitter is two tiles across, so it takes a lane PAIR - lanes 1-2, 3-4 and
+--- so on - which is why an odd bundle is refused outright rather than half
+--- converted. Straight runs only: the lanes of a corner end staggered, so a row
+--- across them would not line up.
+---
+--- Returns the new spec list, or nil plus a LocalisedString.
+local function apply_splitters(anchor, resolved, context, specs)
+  if resolved.curved then
+    return nil, { "beltplanner.error-splitter-corner" }
+  end
+  if anchor.lanes % 2 ~= 0 then
+    return nil, { "beltplanner.error-splitter-odd", anchor.lanes }
+  end
+  if not context.tier.splitter then
+    return nil, { "beltplanner.error-splitter-none" }
+  end
+
+  local ends, lane_of = {}, {}
+  for lane = 1, anchor.lanes do
+    local tile = geometry.lane_end(anchor, resolved, lane)
+    ends[lane] = tile
+    lane_of[key_of(tile.x, tile.y)] = lane
+  end
+
+  -- Drop the belts on those tiles. Landfill and removals there still apply, so
+  -- they are kept; a tunnel mouth cannot also be a splitter, so it refuses.
+  local kept, replaced = {}, {}
+  for _, spec in ipairs(specs) do
+    local lane = spec.position
+      and lane_of[key_of(floor(spec.position.x), floor(spec.position.y))]
+
+    if lane and spec.kind == "belt" then
+      replaced[lane] = true
+    elseif lane and spec.kind == "underground" then
+      return nil, { "beltplanner.error-splitter-blocked" }
+    else
+      kept[#kept + 1] = spec
+    end
+  end
+
+  for lane = 1, anchor.lanes, 2 do
+    if not (replaced[lane] and replaced[lane + 1]) then
+      -- One of the pair never got a belt, so the ground under it is not clear.
+      return nil, { "beltplanner.error-splitter-blocked" }
+    end
+
+    local a, b = ends[lane], ends[lane + 1]
+    kept[#kept + 1] = {
+      kind = "splitter",
+      name = context.tier.splitter,
+      -- Two tiles wide, so it is centred on the boundary between the pair
+      -- rather than on either tile.
+      position = { x = (a.x + b.x) / 2 + 0.5, y = (a.y + b.y) / 2 + 0.5 },
+      direction = context.splitter_direction,
+    }
+  end
+
+  return kept
+end
+
+--------------------------------------------------------------------------------
 -- public
 
 --- Build the full spec list for a run.
@@ -303,6 +368,19 @@ function plan.build(surface, force, anchor, resolved, options)
         return nil, reason, blockers
       end
     end
+  end
+
+  if options.splitters then
+    -- A straight run has exactly one run per lane, and its direction is the way
+    -- items flow, which is the way the splitters must face.
+    local runs = geometry.lane_runs(anchor, resolved, 1)
+    context.splitter_direction = runs[1] and runs[1].direction
+
+    local replaced, reason = apply_splitters(anchor, resolved, context, specs)
+    if not replaced then
+      return nil, reason, blockers
+    end
+    specs = replaced
   end
 
   return { specs = specs, blockers = blockers, cost = cost }

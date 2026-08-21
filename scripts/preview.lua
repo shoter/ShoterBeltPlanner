@@ -20,6 +20,7 @@ local UNDERGROUND_TINT = { 0.55, 1, 0.7, 0.9 }
 local LANDFILL_TINT = { 0.9, 0.85, 0.6, 0.45 }
 local ARROW_TINT = { 0.4, 1, 0.5, 0.75 }
 local REMOVE_TINT = { 1, 0.55, 0.2, 0.9 }
+local SPLITTER_TINT = { 0.6, 0.8, 1, 0.95 }
 
 -- Past this many pieces the per-tile sprites are replaced by a line per lane.
 -- Every sprite is destroyed and recreated whenever the cursor crosses a tile, so
@@ -81,6 +82,8 @@ local function marker_for(spec)
     return "item/landfill", LANDFILL_TINT, 0.5
   elseif kind == "underground" then
     return "item/" .. spec.name, UNDERGROUND_TINT, 0.62
+  elseif kind == "splitter" then
+    return "item/" .. spec.name, SPLITTER_TINT, 0.75
   end
   return nil
 end

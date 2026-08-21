@@ -23,6 +23,10 @@ Date: 2026-08-21
     - A window while the tool is held, showing the belt tier and the three decisions the run
       depends on: tunnel under obstacles, landfill over water, and clear your own buildings. The
       mod settings are now only the defaults those switches start at.
+    - Splitters. Shift+right-drag ends a run with a row of splitters instead of belts, pairing lanes
+      1-2, 3-4 and so on and facing them along the flow. Everything leading up to them - the belts,
+      the tunnels, the clearing - behaves exactly as it would have. The bundle has to be an even
+      number of lanes wide and the run straight, and both are refused rather than approximated.
     - Shift+B steps through the belt tiers without leaving the tool.
   Bugfixes:
     - Fixed a second run over the first being refused, and the planner then trying to tunnel under
