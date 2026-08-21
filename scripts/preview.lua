@@ -149,6 +149,18 @@ local function draw_anchor(player, pdata, anchor)
     ANCHOR_COLOUR, ANCHOR_FILL)
 end
 
+--- Widest side of a removal's footprint, in tiles. Never below one, so a tree
+--- (whose box is smaller than a tile) keeps the tile-sized mark; capped so a
+--- very large entity does not bury its neighbours under a single huge cross.
+local function footprint_of(spec)
+  local entity = spec.entity
+  if not (entity and entity.valid) then return 1 end
+
+  local box = entity.bounding_box
+  local span = math.max(box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y)
+  return math.max(1, math.min(span, 4))
+end
+
 --- Sprite and tint for anything that is not a plain belt.
 ---
 --- Shared by both the detailed and the summarised preview, so a spec kind can no
@@ -158,7 +170,10 @@ end
 local function marker_for(spec)
   local kind = spec.kind
   if kind == "deconstruct" then
-    return "utility/cross_select", REMOVE_TINT, 0.55
+    -- The cross sits at the entity's centre, so it is scaled to what it marks.
+    -- A cliff is four tiles across, and a tile-sized cross in the middle of one
+    -- reads as a mark on the ground beside it rather than on the cliff.
+    return "utility/cross_select", REMOVE_TINT, 0.55 * footprint_of(spec)
   elseif kind == "landfill" then
     return "item/landfill", LANDFILL_TINT, 0.5
   elseif kind == "underground" then

@@ -46,6 +46,7 @@ The point of this tool is to be predictable rather than clever, so it never gues
 
 - **Maximum tiles per click** (map setting) — a run is planned in a single tick, so this caps how much work one click can ask for. Anything over the limit is refused rather than executed.
 - **Landfill over water** (per player) — the value the switch in the tool window starts at. Change it in the window to change it now.
+- **Blow up cliffs** (per player) — likewise, for the switch that marks cliffs in the way for deconstruction. It only does anything once cliff explosives are researched; until then cliffs stop the run.
 
 ## Made with AI
 

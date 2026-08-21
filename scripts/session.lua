@@ -45,11 +45,19 @@ end
 --- setting at all - the settings stage runs before any prototype exists, so
 --- there is nothing to build an allowed_values list from.
 function session.ensure_defaults(player, pdata)
-  if pdata.landfill ~= nil then return end
-
   local per_user = settings.get_player_settings(player)
-  pdata.landfill = per_user["beltplanner-use-landfill"].value
-  pdata.clear_built = false
+
+  if pdata.landfill == nil then
+    pdata.landfill = per_user["beltplanner-use-landfill"].value
+    pdata.clear_built = false
+  end
+
+  -- Seeded on its own rather than under the landfill guard, because a player
+  -- who picked the tool up before this switch existed already has `landfill`
+  -- set and would otherwise never receive it.
+  if pdata.clear_cliffs == nil then
+    pdata.clear_cliffs = per_user["beltplanner-clear-cliffs"].value
+  end
 end
 
 local function options_for(player, pdata)
@@ -66,6 +74,10 @@ local function options_for(player, pdata)
     -- something that marks your factory for deconstruction is the wrong way
     -- round.
     clear_built = pdata.clear_built or false,
+    -- Same shape as clear_built. Whether the force is actually allowed to blow
+    -- cliffs up is the planner's decision, not this one's, so an early tick of
+    -- the switch cannot order something the robots would ignore.
+    clear_cliffs = pdata.clear_cliffs or false,
   }
 end
 

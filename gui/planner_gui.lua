@@ -9,6 +9,7 @@
 local flib_gui = require("__flib__.gui")
 local belts = require("scripts/belts")
 local session = require("scripts/session")
+local plan = require("scripts/logic/plan")
 
 local planner_gui = {}
 
@@ -66,6 +67,32 @@ local function checkbox(option, caption, tooltip, state)
   }
 end
 
+--- The cliff switch only does anything once cliff explosives are researched, so
+--- until then it is greyed out and its tooltip says why, rather than sitting
+--- there looking like it should work. The planner gates on the same flag, so a
+--- stale window cannot order what the robots would ignore.
+local function cliffs_checkbox(player, pdata)
+  local allowed = plan.can_clear_cliffs(player.force)
+  local def = checkbox("clear_cliffs", { "beltplanner.gui-cliffs" },
+    allowed and { "beltplanner.gui-cliffs-tip" } or { "beltplanner.gui-cliffs-locked-tip" },
+    pdata.clear_cliffs)
+  def.enabled = allowed
+  return def
+end
+
+--- Research can finish while the window is open, so the switch is re-checked on
+--- every refresh rather than only when the window is built.
+local function refresh_cliffs_checkbox(player, body)
+  local box = body["beltplanner_clear_cliffs"]
+  if not box then return end
+
+  local allowed = plan.can_clear_cliffs(player.force)
+  if box.enabled == allowed then return end
+
+  box.enabled = allowed
+  box.tooltip = allowed and { "beltplanner.gui-cliffs-tip" } or { "beltplanner.gui-cliffs-locked-tip" }
+end
+
 --- Rebuild the window from scratch. Cheap enough at this size, and far less
 --- error-prone than patching individual elements as options change.
 function planner_gui.open(player)
@@ -89,6 +116,7 @@ function planner_gui.open(player)
       { type = "line" },
       checkbox("landfill", { "beltplanner.gui-landfill" }, { "beltplanner.gui-landfill-tip" }, pdata.landfill),
       checkbox("clear_built", { "beltplanner.gui-clear" }, { "beltplanner.gui-clear-tip" }, pdata.clear_built),
+      cliffs_checkbox(player, pdata),
       { type = "line" },
       { type = "label", name = "beltplanner_status", caption = "" },
     },
@@ -135,6 +163,8 @@ function planner_gui.refresh(player)
       button.toggled = button.tags.belt == chosen
     end
   end
+
+  refresh_cliffs_checkbox(player, body)
 
   local status = body["beltplanner_status"]
   if status then

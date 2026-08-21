@@ -171,6 +171,27 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
 end)
 
 --------------------------------------------------------------------------------
+-- research
+
+-- The "Blow up cliffs" switch is only live once cliff explosives are researched,
+-- and research can finish while someone is standing there with the tool out.
+-- The window is rebuilt every time the tool is taken out, so this only matters
+-- for a window that is already open; refresh is a no-op for everyone else.
+-- Every research is handled rather than only cliff explosives, because a modded
+-- technology may carry the same effect under another name.
+local function on_research_changed(event)
+  local technology = event.research
+  if not (technology and technology.valid) then return end
+
+  for _, player in pairs(technology.force.connected_players) do
+    planner_gui.refresh(player)
+  end
+end
+
+script.on_event(defines.events.on_research_finished, on_research_changed)
+script.on_event(defines.events.on_research_reversed, on_research_changed)
+
+--------------------------------------------------------------------------------
 -- teardown
 
 local function forget_player(event)

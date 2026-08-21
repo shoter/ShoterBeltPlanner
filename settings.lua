@@ -24,4 +24,13 @@ data:extend({
     default_value = false,
     order = "c",
   },
+  {
+    -- Off by default for the same reason the switch itself is off by default:
+    -- cliff explosives are something the player chooses to spend.
+    type = "bool-setting",
+    name = "beltplanner-clear-cliffs",
+    setting_type = "runtime-per-user",
+    default_value = false,
+    order = "d",
+  },
 })

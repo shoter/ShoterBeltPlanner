@@ -20,9 +20,9 @@ local plan = {}
 
 local floor, ceil = math.floor, math.ceil
 
--- OWNED is separated from BLOCKED so the refusal can name the one thing the
--- player can do something about from the tool window.
-local FREE, WATER, BLOCKED, OWNED = 1, 2, 3, 4
+-- OWNED and CLIFF are separated from BLOCKED so the refusal can name the thing
+-- the player can do something about from the tool window: each has a switch.
+local FREE, WATER, BLOCKED, OWNED, CLIFF = 1, 2, 3, 4, 5
 
 --------------------------------------------------------------------------------
 -- survey
@@ -121,6 +121,8 @@ end
 ---   they just asked for a belt.
 --- "own"   - something the player built, with the clearing option switched off.
 ---   Reported separately so the refusal can say which switch would fix it.
+--- "cliff" - a cliff, with the blasting option off or not yet available.
+---   Reported separately for the same reason.
 --- "block" - anything else. Nothing is tunnelled under, so it simply stops.
 local function verdict_for(entity, context)
   local kind = entity.type
@@ -131,13 +133,22 @@ local function verdict_for(entity, context)
   end
 
   -- Gleba's yumako trees and jellystems are "plant", not "tree": a plant is a
-  -- tree that grows. Wild ones are scenery and go the way a tree does, which is
-  -- what a player who just arrived from Nauvis expects. But a plant on the
-  -- player's OWN force was put there by their agricultural tower, and that is a
-  -- crop, not a weed - so it falls through to the own-building rule below and is
-  -- only cleared when they have asked for that.
-  if kind == "plant" and entity.force.name ~= context.force_name then
-    return "clear"
+  -- tree that grows. The engine keeps every plant on the neutral force, even one
+  -- an agricultural tower planted - create_entity with another force hands back
+  -- a neutral plant, which the selftest pins - so there is no crop to tell apart
+  -- from a weed, and a plant goes the way a tree does: a vanilla deconstruction
+  -- planner treats the two alike.
+  if kind == "plant" then return "clear" end
+
+  -- A cliff is never cleared by default, because blowing one up costs cliff
+  -- explosives the player may be saving, and it is never left to the engine's
+  -- placement check either: with cliff explosives researched, a forced build
+  -- check over a cliff reports placeable and would have marked the cliff as a
+  -- side effect of building. That is exactly the kind of quiet guess this tool
+  -- must not make, so the cliff is either ordered removed here in plain sight
+  -- or it stops the run.
+  if kind == "cliff" then
+    return context.clear_cliffs and "clear" or "cliff"
   end
 
   -- A character can no longer reach this far: a character's collision mask
@@ -170,7 +181,7 @@ local function classify(context, direction, tile, water, occupants)
     return FREE
   end
 
-  local removable, obstructed, owned = {}, false, false
+  local removable, obstructed, owned, cliff = {}, false, false, false
   for _, entity in ipairs(present) do
     if entity.valid then
       local verdict = verdict_for(entity, context)
@@ -178,6 +189,8 @@ local function classify(context, direction, tile, water, occupants)
         removable[#removable + 1] = entity
       elseif verdict == "own" then
         owned = true
+      elseif verdict == "cliff" then
+        cliff = true
       else
         obstructed = true
       end
@@ -185,9 +198,12 @@ local function classify(context, direction, tile, water, occupants)
   end
 
   -- Your own building takes precedence in the reporting: it is the one the
-  -- player can clear with a switch.
+  -- player can clear with a switch. A cliff comes next, for the same reason.
   if owned then
     return OWNED
+  end
+  if cliff then
+    return CLIFF
   end
 
   if obstructed then
@@ -245,10 +261,13 @@ local function plan_run(context, run, water, occupants, specs, blockers)
   -- so anything in the way stops the run. Every offending tile is collected
   -- before refusing, rather than bailing on the first, so the preview can show
   -- the player all of them at once.
-  local owned, blocked = false, false
+  local owned, cliff, blocked = false, false, false
   for index, state in ipairs(states) do
     if state == OWNED then
       owned = true
+      blockers[#blockers + 1] = tiles[index]
+    elseif state == CLIFF then
+      cliff = true
       blockers[#blockers + 1] = tiles[index]
     elseif state == BLOCKED then
       blocked = true
@@ -258,6 +277,9 @@ local function plan_run(context, run, water, occupants, specs, blockers)
 
   if owned then
     return false, { "beltplanner.error-own-structure" }
+  end
+  if cliff then
+    return false, { "beltplanner.error-cliff" }
   end
   if blocked then
     return false, { "beltplanner.error-blocked" }
@@ -351,11 +373,26 @@ end
 --------------------------------------------------------------------------------
 -- public
 
+--- May this force order a cliff removed at all?
+---
+--- Cliffs can only be deconstructed once cliff explosives are researched; the
+--- technology flips this flag on the force, and a deconstruction order on a
+--- cliff before then is ignored by the engine. The switch in the tool window is
+--- therefore not enough on its own, and the gate lives here rather than in the
+--- window so the plan cannot be talked into it by stale GUI state. The force may
+--- arrive as a name, the way the self-test passes it.
+function plan.can_clear_cliffs(force)
+  if type(force) == "string" then
+    force = game.forces[force]
+  end
+  return force ~= nil and force.cliff_deconstruction_enabled == true
+end
+
 --- Build the full spec list for a run.
 ---
---- `options` carries { tier, landfill, clear_built, max_tiles, splitters }.
---- Returns { specs, blockers, cost } or nil plus a LocalisedString and the
---- blocking tiles.
+--- `options` carries { tier, landfill, clear_built, clear_cliffs, max_tiles,
+--- splitters }. Returns { specs, blockers, cost } or nil plus a LocalisedString
+--- and the blocking tiles.
 function plan.build(surface, force, anchor, resolved, options)
   local tier = options.tier or belts.default()
   if not tier then
@@ -375,6 +412,7 @@ function plan.build(surface, force, anchor, resolved, options)
     tier = tier,
     landfill = options.landfill,
     clear_built = options.clear_built or false,
+    clear_cliffs = options.clear_cliffs and plan.can_clear_cliffs(force) or false,
     seen = {},
   }
 
