@@ -23,8 +23,38 @@ local plan = require("scripts/logic/plan")
 local place = require("scripts/logic/place")
 local preview = require("scripts/preview")
 local tracker = require("scripts/cursor/tracker")
+local tally = require("scripts/tally")
 
 local session = {}
+
+--------------------------------------------------------------------------------
+-- summary hook
+
+--- Called as function(player, summary) whenever the preview's reading of the run
+--- changes: tally.summary's result while a run is planned, nil when there is
+--- nothing planned or the plan was refused.
+---
+--- The tool window shows the same tally as the cursor label, and it is updated
+--- from here rather than polled, because the window only redraws on events and
+--- the preview re-plans on every tile the pointer crosses. The window requires
+--- this module, so this module cannot require the window; it leaves a hook
+--- instead, which gui/planner_gui.lua fills in at file scope.
+session.on_summary = nil
+
+--- Remember the current summary and tell whoever is listening, but only when
+--- it actually changed: the window would otherwise be rewritten on every call
+--- that merely confirms there is still nothing to say.
+---
+--- The summary lives in pdata so the window's event-driven refresh can show it
+--- again without re-planning, and it is cleared wherever the run it describes
+--- stops being the run in hand.
+local function set_summary(player, pdata, summary)
+  if summary == nil and pdata.summary == nil then return end
+  pdata.summary = summary
+  if session.on_summary then
+    session.on_summary(player, summary)
+  end
+end
 
 --------------------------------------------------------------------------------
 -- state
@@ -196,6 +226,7 @@ function session.update_preview(player)
     if pdata.preview_tile ~= nil then
       pdata.preview_tile = nil
       preview.render(player, pdata, pdata.anchor)
+      set_summary(player, pdata, nil)
     end
     return
   end
@@ -248,6 +279,7 @@ function session.update_preview(player)
   if not resolved then
     preview.render(player, pdata, anchor)
     preview.show_problem(player, pdata, tile, unresolved)
+    set_summary(player, pdata, nil)
     pdata.preview_tile = tile
     return
   end
@@ -255,10 +287,16 @@ function session.update_preview(player)
   local options = options_for(player, pdata)
   local result, failure, blockers = plan.build(player.surface, player.force, anchor, resolved, options)
 
-  preview.render(player, pdata, anchor, resolved, result, blockers)
+  -- One reading of the result for both the label and the window, so the two
+  -- can never quote different numbers. A refusal has no tally: the window goes
+  -- back to its plain status and the reason is shown at the cursor.
+  local summary = result and tally.summary(anchor, result, options.tier) or nil
+
+  preview.render(player, pdata, anchor, resolved, result, blockers, summary)
   if not result then
     preview.show_problem(player, pdata, tile, failure)
   end
+  set_summary(player, pdata, summary)
   pdata.preview_tile = tile
 end
 
@@ -279,6 +317,7 @@ function session.cancel(player, quiet)
   pdata.anchor_origin = nil
   pdata.preview_tile = nil
   pdata.drag_from = nil
+  set_summary(player, pdata, nil)
 
   if (had_anchor or was_sizing) and not quiet then
     player.create_local_flying_text { text = { "beltplanner.cancelled" }, create_at_cursor = true }
@@ -332,6 +371,7 @@ local function accept_anchor(player, pdata, anchor)
   pdata.anchor = anchor
   pdata.anchor_origin = nil
   pdata.preview_tile = nil
+  set_summary(player, pdata, nil)
   preview.render(player, pdata, anchor)
   player.play_sound { path = "utility/rail_plan_start" }
 end
@@ -371,6 +411,8 @@ local function commit(player, pdata, area, splitters)
   next_anchor.reversed = anchor.reversed
   pdata.anchor = next_anchor
   pdata.preview_tile = nil
+  -- The tally described the run just placed; the next one has not been planned.
+  set_summary(player, pdata, nil)
 
   preview.render(player, pdata, next_anchor)
   player.play_sound { path = "utility/build_blueprint_medium" }

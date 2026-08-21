@@ -10,7 +10,6 @@
 
 local geometry = require("scripts/geometry")
 local belts = require("scripts/belts")
-local qualities = require("scripts/qualities")
 
 local preview = {}
 
@@ -319,25 +318,49 @@ local function draw_summary(player, pdata, anchor, resolved, specs)
   end
 end
 
---- What the label adds for a non-normal quality, or nothing.
----
---- Normal is left unsaid: it is what every ghost was before quality could be
---- chosen, and on an install without quality the label has to read exactly as
---- it always did. The name comes from the plan result, not from the player's
---- choice, so the label describes what the specs will be placed at.
-local function quality_suffix(result)
-  local quality = result.quality and qualities.get(result.quality)
-  if not quality or quality.name == "normal" then return "" end
-  return { "beltplanner.quality-suffix", quality.localised_name }
-end
-
 --------------------------------------------------------------------------------
 -- public
 
+--- The label over the anchor: what the run is, and under it what the click
+--- will cost.
+---
+--- Two render objects rather than one text with a newline in it, because
+--- whether draw_text breaks lines is not something the API promises, and a
+--- label that might come out as one long line is not worth finding out about in
+--- someone's save. The cost line sits nearest the anchor; it is the one that
+--- changes as the pointer moves.
+local function draw_label(player, pdata, anchor, summary)
+  local head = geometry.lane_start(anchor, 1)
+  local surface = player.surface
+
+  store(pdata, rendering.draw_text {
+    text = summary.run,
+    target = { head.x + 0.5, head.y - (summary.cost and 1.65 or 1.1) },
+    color = ANCHOR_COLOUR,
+    scale = 0.6,
+    alignment = "center",
+    surface = surface,
+    players = { player },
+  })
+
+  if summary.cost then
+    store(pdata, rendering.draw_text {
+      text = summary.cost,
+      target = { head.x + 0.5, head.y - 1.1 },
+      color = ANCHOR_COLOUR,
+      scale = 0.6,
+      alignment = "center",
+      surface = surface,
+      players = { player },
+    })
+  end
+end
+
 --- Redraw everything for this player. `result` may be nil, which draws the
 --- anchor alone - the state between setting an anchor and knowing where the
---- cursor is.
-function preview.render(player, pdata, anchor, resolved, result, blockers)
+--- cursor is. `summary` is tally.summary's reading of that result; it is made
+--- by the caller so that the window can be told the very same thing.
+function preview.render(player, pdata, anchor, resolved, result, blockers, summary)
   preview.clear(pdata)
   if not anchor then return end
 
@@ -355,17 +378,9 @@ function preview.render(player, pdata, anchor, resolved, result, blockers)
     draw_summary(player, pdata, anchor, resolved, result.specs)
   end
 
-  local head = geometry.lane_start(anchor, 1)
-  store(pdata, rendering.draw_text {
-    text = { "beltplanner.preview-label", anchor.lanes, result.cost,
-      { "", anchor.reversed and { "beltplanner.reversed-suffix" } or "", quality_suffix(result) } },
-    target = { head.x + 0.5, head.y - 1.1 },
-    color = ANCHOR_COLOUR,
-    scale = 0.6,
-    alignment = "center",
-    surface = player.surface,
-    players = { player },
-  })
+  if summary then
+    draw_label(player, pdata, anchor, summary)
+  end
 end
 
 --- The anchor being sized: the marked area the next click will accept.
