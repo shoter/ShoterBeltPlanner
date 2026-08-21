@@ -293,9 +293,17 @@ function session.on_press(player, position, ctrl)
   pdata.ctrl_tick = ctrl and game.tick or nil
 
   if not pdata.anchor and position then
-    pdata.drag_from = { x = math.floor(position.x), y = math.floor(position.y) }
+    local from = { x = math.floor(position.x), y = math.floor(position.y) }
+    pdata.drag_from = from
     pdata.drag_tick = game.tick
     pdata.preview_tile = nil
+
+    -- Mark the starting tile straight away rather than waiting for the tracker.
+    -- Whether the engine keeps updating the selection while a mouse button is
+    -- held is not something a mod can find out from the API, so the live growth
+    -- of this box is best-effort; the press itself is not, and marking the
+    -- origin means there is always SOME indication that a drag has begun.
+    preview.show_drag(player, pdata, from, from)
   end
 end
 

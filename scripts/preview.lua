@@ -15,6 +15,12 @@ local preview = {}
 local ANCHOR_COLOUR = { 0.35, 0.9, 0.45, 0.8 }
 local BLOCKER_COLOUR = { 1, 0.25, 0.2, 0.9 }
 
+-- The wash the copy tool leaves on the ground: low alpha, and drawn beneath
+-- entities so it reads as marked ground rather than as something floating over
+-- the base.
+local ANCHOR_FILL = { 0.35, 0.9, 0.45, 0.16 }
+local BLOCKER_FILL = { 1, 0.25, 0.2, 0.16 }
+
 local BELT_TINT = { 1, 1, 1, 0.55 }
 local UNDERGROUND_TINT = { 0.55, 1, 0.7, 0.9 }
 local LANDFILL_TINT = { 0.9, 0.85, 0.6, 0.45 }
@@ -43,6 +49,33 @@ function preview.clear(pdata)
   pdata.preview_tile = nil
 end
 
+--- An area marked the way Factorio marks a copy selection: a tinted wash on the
+--- ground with a crisp border over it. An outline on its own is easy to miss
+--- against a busy base, which is the whole reason the vanilla tools fill.
+local function draw_marked_area(player, pdata, left_top, right_bottom, border, fill)
+  local surface = player.surface
+
+  store(pdata, rendering.draw_rectangle {
+    color = fill,
+    filled = true,
+    draw_on_ground = true,
+    left_top = left_top,
+    right_bottom = right_bottom,
+    surface = surface,
+    players = { player },
+  })
+
+  store(pdata, rendering.draw_rectangle {
+    color = border,
+    width = 3,
+    filled = false,
+    left_top = left_top,
+    right_bottom = right_bottom,
+    surface = surface,
+    players = { player },
+  })
+end
+
 --- 2.0 directions are 16-way and a RealOrientation is 0..1.
 local function orientation_of(direction)
   return (direction or 0) / 16
@@ -51,21 +84,16 @@ end
 --------------------------------------------------------------------------------
 -- pieces
 
---- One outline round the whole anchor band rather than a square per lane: a row
---- of small boxes next to the cursor's own selection box is just noise.
+--- One marked area over the whole anchor band rather than a square per lane: a
+--- row of small boxes next to the cursor's own selection box is just noise.
 local function draw_anchor(player, pdata, anchor)
   local first = geometry.lane_start(anchor, 1)
   local last = geometry.lane_start(anchor, anchor.lanes)
 
-  store(pdata, rendering.draw_rectangle {
-    color = ANCHOR_COLOUR,
-    width = 3,
-    filled = false,
-    left_top = { math.min(first.x, last.x), math.min(first.y, last.y) },
-    right_bottom = { math.max(first.x, last.x) + 1, math.max(first.y, last.y) + 1 },
-    surface = player.surface,
-    players = { player },
-  })
+  draw_marked_area(player, pdata,
+    { math.min(first.x, last.x), math.min(first.y, last.y) },
+    { math.max(first.x, last.x) + 1, math.max(first.y, last.y) + 1 },
+    ANCHOR_COLOUR, ANCHOR_FILL)
 end
 
 --- Sprite and tint for anything that is not a plain belt.
@@ -252,18 +280,12 @@ function preview.show_drag(player, pdata, from, to)
 
   local legal = (width == 1 or height == 1)
   local colour = legal and ANCHOR_COLOUR or BLOCKER_COLOUR
+  local fill = legal and ANCHOR_FILL or BLOCKER_FILL
   local surface = player.surface
 
-  -- One outline for the whole selection, whatever its size.
-  store(pdata, rendering.draw_rectangle {
-    color = colour,
-    width = 3,
-    filled = false,
-    left_top = { x1, y1 },
-    right_bottom = { x2 + 1, y2 + 1 },
-    surface = surface,
-    players = { player },
-  })
+  -- One marked area for the whole selection, whatever its size, so the shape
+  -- being dragged is obvious before the button is let go.
+  draw_marked_area(player, pdata, { x1, y1 }, { x2 + 1, y2 + 1 }, colour, fill)
 
   store(pdata, rendering.draw_text {
     text = legal and { "beltplanner.drag-label", math.max(width, height) }

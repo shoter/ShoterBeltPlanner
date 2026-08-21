@@ -60,6 +60,9 @@ Date: 2026-08-21
       pointer instead, is wider, and moves on before the pointer can reach its edge.
     - A run the tool cannot plan now says why, at the cursor, while you are still pointing. It used
       to just draw nothing, which looks the same as the tool being broken.
+    - The opening selection is marked on the ground the way the copy tool marks one: a tinted wash
+      drawn beneath entities with a border over it, rather than a thin outline that is easy to lose
+      against a busy base. The starting tile is marked the moment the button goes down.
   Info:
     - Everything is placed as ghosts. The tool never consumes items and never builds real entities,
       so it changes nothing in a savegame that was not already ordered.
