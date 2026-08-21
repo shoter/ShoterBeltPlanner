@@ -139,7 +139,13 @@ function planner_gui.refresh(player)
   local status = body["beltplanner_status"]
   if status then
     local anchor = pdata.anchor
-    if anchor then
+    -- The zoomed-out map (remote view at chart zoom) selects nothing, so the
+    -- tracker cannot see the pointer there and no instruction about clicking
+    -- can be followed. Read here directly: there is no event for the render
+    -- mode changing, and this is what every caller of refresh wants shown.
+    if player.render_mode == defines.render_mode.chart then
+      status.caption = { "beltplanner.gui-status-chart" }
+    elseif anchor then
       status.caption = anchor.reversed
           and { "beltplanner.gui-status-reversed", anchor.lanes }
         or { "beltplanner.gui-status", anchor.lanes }

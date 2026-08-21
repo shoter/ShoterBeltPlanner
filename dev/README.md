@@ -65,6 +65,11 @@ crashes reached a player. `control.lua` therefore calls the preview behind
 `pcall`, and `selftest.lua` pins the shape every spec kind must have, but the
 only real test of anything visual is playing the game.
 
+The same goes for anything that needs a player object: the controller-change
+handling for remote view (`on_player_controller_changed`, `session.relocate`,
+the render-mode check in the tracker and the window) has no headless coverage
+and is only exercised in game.
+
 ## Benchmark
 
 `selftest.benchmark()` runs after the assertions and reports `[BP-BENCH]` timings

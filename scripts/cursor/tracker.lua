@@ -317,6 +317,15 @@ function tracker.on_selected_entity_changed(event)
     -- Rate-limited only so that resting the pointer on a window does not thrash
     -- the field. It used to wait 30 ticks, which is half a second of a dead
     -- preview every time the pointer came back from somewhere untracked.
+    --
+    -- Not on the zoomed-out map, though. Remote view at chart zoom has no entity
+    -- selection at all, so a probe field placed there can never be highlighted
+    -- and re-seeding would only churn entities for nothing. chart_zoomed_in is
+    -- the ordinary world drawn from the map and selects normally; zooming back
+    -- in to it is what brings the pointer back, and that lands on a probe or a
+    -- real entity and is handled like any other selection.
+    if player.render_mode == defines.render_mode.chart then return end
+
     if pdata.position and (event.tick - (pdata.recovered_tick or 0)) > 12 then
       pdata.recovered_tick = event.tick
       destroy_all_probes(pdata)
