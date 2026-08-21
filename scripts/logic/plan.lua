@@ -75,9 +75,43 @@ local function key_of(x, y)
   return x .. ":" .. y
 end
 
-local function survey_box(surface, box, water, occupants, obstructs)
+--- What the engine would lay over this tile to build on it, or false if there
+--- is nothing that can.
+---
+--- The survey finds water by its collision layer, and every ground that cannot
+--- be built on carries that layer: Nauvis water, but also Vulcanus lava,
+--- Fulgora's oil ocean, Aquilo's ammoniacal ocean and the void around a space
+--- platform. This used to order landfill over all of them, which was only ever
+--- right on Nauvis - a landfill ghost on lava can never be built, so the run
+--- looked placed and then sat there forever. The tile prototype already names
+--- its own cover (landfill, foundation, ice platform, platform foundation), so
+--- that is asked rather than assumed, and a tile with no cover at all simply
+--- cannot be built on, whatever the switch says.
+---
+--- Cached by tile name: a survey crosses many tiles of a handful of prototypes,
+--- and each lookup walks two prototype references.
+local function cover_test()
+  local known = {}
+
+  return function(tile)
+    local name = tile.name
+    local cached = known[name]
+    if cached ~= nil then return cached end
+
+    local cover = tile.prototype.default_cover_tile
+    local result = cover and cover.name or false
+
+    known[name] = result
+    return result
+  end
+end
+
+local function survey_box(surface, box, water, occupants, obstructs, cover_of)
+  -- A water tile maps to the name of its cover tile, or to false when nothing
+  -- covers it. Both say "this is water"; only the first says "and it can be
+  -- bridged".
   for _, tile in pairs(surface.find_tiles_filtered { area = box, collision_mask = "water_tile" }) do
-    water[key_of(tile.position.x, tile.position.y)] = true
+    water[key_of(tile.position.x, tile.position.y)] = cover_of(tile)
   end
 
   for _, entity in pairs(surface.find_entities_filtered { area = box }) do
@@ -106,9 +140,10 @@ end
 --- mostly-empty rectangle enclosing them.
 local function survey(surface, boxes, obstructs)
   local water, occupants = {}, {}
+  local cover_of = cover_test()
 
   for _, box in ipairs(boxes) do
-    survey_box(surface, box, water, occupants, obstructs)
+    survey_box(surface, box, water, occupants, obstructs, cover_of)
   end
 
   return water, occupants
@@ -148,11 +183,20 @@ end
 --- places quite happily under a tree, so trusting it would silently leave the
 --- tree standing and the ghost unbuildable. That was the bug this shape exists
 --- to prevent.
+---
+--- Returns the state, the entities to remove, and for water the name of the
+--- tile that will cover it.
 local function classify(context, direction, tile, water, occupants)
   local key = key_of(tile.x, tile.y)
 
-  if water[key] then
-    return context.landfill and WATER or BLOCKED
+  local cover = water[key]
+  if cover ~= nil then
+    -- Water with nothing to cover it is as solid a wall as a cliff: no ghost
+    -- could ever be built there, so the switch cannot help and does not try.
+    if cover and context.landfill then
+      return WATER, nil, cover
+    end
+    return BLOCKED
   end
 
   local present = occupants[key]
@@ -209,9 +253,10 @@ end
 --- than none.
 local function plan_run(context, run, water, occupants, specs, blockers)
   local tiles, direction = run.tiles, run.direction
-  local states, removals = {}, {}
+  local states, removals, covers = {}, {}, {}
   for index, tile in ipairs(tiles) do
-    states[index], removals[index] = classify(context, direction, tile, water, occupants)
+    states[index], removals[index], covers[index] =
+      classify(context, direction, tile, water, occupants)
   end
 
   -- One entity can straddle several tiles and several lanes, so removals are
@@ -256,10 +301,13 @@ local function plan_run(context, run, water, occupants, specs, blockers)
   for index, tile in ipairs(tiles) do
     emit_removals(index)
 
+    -- The kind stays "landfill" whatever the surface calls its cover, because
+    -- that is the word the player knows and the one the preview and the commit
+    -- key on. The name is the tile that actually gets placed.
     if states[index] == WATER then
       specs[#specs + 1] = {
         kind = "landfill",
-        name = "landfill",
+        name = covers[index],
         position = centre(tile),
       }
     end

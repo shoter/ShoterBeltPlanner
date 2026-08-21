@@ -59,6 +59,13 @@ from touching the real `mods` folder.
 The planner is well covered: geometry, corners, clearing, splitters, every
 refusal, and replanning over a run already placed.
 
+Water is covered as far as base allows. The cover tile comes from each tile
+prototype's `default_cover_tile`, and every water tile in base answers
+"landfill", so the check that a different answer is carried through (lava to
+foundation, and so on) only runs when Space Age or a mod supplies such a tile;
+it reports `SKIP` otherwise. Running the suite with Space Age is the only way
+to see that assertion pass.
+
 Nothing that draws is covered at all. `--create` produces a map with no player,
 so the GUI and the preview renderer cannot run headlessly — which is how two
 crashes reached a player. `control.lua` therefore calls the preview behind

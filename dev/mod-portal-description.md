@@ -12,7 +12,7 @@ You mark where the belts start and how wide the bundle is, then click where you 
 - **Splitters.** Shift + right-drag finishes a run with a row of splitters instead of belts, pairing lanes 1-2, 3-4 and so on.
 - **Ghosts only.** Nothing is built for real and nothing is taken from your inventory. One press of undo removes an entire run — landfill, felled trees and all.
 - **A preview that means it.** What you see under the cursor is drawn from the same list the click commits, so it is not an impression of the result, it is the result. Blocked tiles are outlined in red before you commit to anything.
-- **Landfill over water,** as tile ghosts. The water itself is never modified.
+- **Landfill over water,** as tile ghosts — or whatever the terrain's own cover is: foundation on lava and oil, ice platform on Aquilo, platform foundation in space. The water itself is never modified.
 - **Any belt.** Tiers are read from the prototypes, so modded belts are picked up automatically. Shift+B steps through them without leaving the tool.
 
 ## How to use it

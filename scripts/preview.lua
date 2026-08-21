@@ -149,6 +149,40 @@ local function draw_anchor(player, pdata, anchor)
     ANCHOR_COLOUR, ANCHOR_FILL)
 end
 
+--- The icon to show for a tile that will be laid over water.
+---
+--- A landfill spec names the surface's own cover tile - landfill on Nauvis,
+--- foundation on Vulcanus, ice platform on Aquilo - so the icon cannot be fixed
+--- here any more. The item that places the tile is preferred over the tile's
+--- own sprite because the item is what the player knows from their toolbar and
+--- what the robots will be asking for; the tile sprite is the fallback for a
+--- cover that no item places. Cached because prototypes do not change while the
+--- game runs, and this is asked once per water tile on every pointer move.
+local cover_sprites = {}
+
+local function cover_sprite(tile_name)
+  local sprite = cover_sprites[tile_name]
+  if sprite then return sprite end
+
+  local tile = prototypes.tile[tile_name]
+  local items = tile and tile.items_to_place_this
+  local item = items and items[1] and items[1].name
+
+  if item and helpers.is_valid_sprite_path("item/" .. item) then
+    sprite = "item/" .. item
+  elseif helpers.is_valid_sprite_path("tile/" .. tile_name) then
+    sprite = "tile/" .. tile_name
+  else
+    -- Nothing of its own to draw with. The engine's own question mark is
+    -- always there, and a marked tile with an odd icon beats a preview that
+    -- crashed over one.
+    sprite = "utility/questionmark"
+  end
+
+  cover_sprites[tile_name] = sprite
+  return sprite
+end
+
 --- Sprite and tint for anything that is not a plain belt.
 ---
 --- Shared by both the detailed and the summarised preview, so a spec kind can no
@@ -160,7 +194,7 @@ local function marker_for(spec)
   if kind == "deconstruct" then
     return "utility/cross_select", REMOVE_TINT, 0.55
   elseif kind == "landfill" then
-    return "item/landfill", LANDFILL_TINT, 0.5
+    return cover_sprite(spec.name), LANDFILL_TINT, 0.5
   elseif kind == "underground" then
     return "item/" .. spec.name, UNDERGROUND_TINT, 0.62
   elseif kind == "splitter" then

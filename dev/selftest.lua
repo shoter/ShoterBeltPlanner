@@ -360,6 +360,136 @@ function selftest.run()
   end
 
   ----------------------------------------------------------------------------
+  line("--- water is bridged with the terrain's own cover tile ---")
+
+  -- The survey finds water by collision layer, and lava, oil, ammoniacal ocean
+  -- and empty space all carry it. The tile ordered over them used to be a
+  -- literal "landfill", which on any of those can never be built; it now comes
+  -- from the tile prototype's default_cover_tile. These pin that the name on the
+  -- spec is the engine's answer and not a constant that happens to agree.
+  local ground_name = prototypes.tile["grass-1"] and "grass-1" or "landfill"
+  local wet_options = { tier = tier, landfill = true, max_tiles = 10000 }
+
+  -- Two columns across all three lanes, in the middle of the 10-tile run.
+  local function lay(tile_name)
+    local tiles = {}
+    for x = BX + 4, BX + 5 do
+      for y = BY, BY + 2 do
+        tiles[#tiles + 1] = { name = tile_name, position = { x, y } }
+      end
+    end
+    -- correct_tiles is off so the tile set is the tile found: the transition
+    -- fix-up may otherwise swap a deep tile bordering land for a shallower one.
+    surface.set_tiles(tiles, false)
+    return surface.get_tile(BX + 4, BY).name == tile_name
+  end
+
+  --- Name of every landfill spec, or the first one that disagrees.
+  local function cover_names(specs)
+    local name, mixed = nil, false
+    for _, spec in ipairs(specs) do
+      if spec.kind == "landfill" then
+        if name and spec.name ~= name then mixed = true end
+        name = name or spec.name
+      end
+    end
+    return name, mixed
+  end
+
+  local water_cover = prototypes.tile["water"] and prototypes.tile["water"].default_cover_tile
+  check("vanilla water is covered by landfill", water_cover and water_cover.name == "landfill",
+    tostring(water_cover and water_cover.name))
+
+  if prototypes.tile["water"] and lay("water") then
+    local dry, dry_reason, dry_tiles = plan.build(surface, force, anchor, resolved, options)
+    check("water refuses the run with the switch off", dry == nil)
+    check("refusal is a plain blockage",
+      dry_reason and dry_reason[1] == "beltplanner.error-blocked",
+      tostring(dry_reason and dry_reason[1]))
+    check("every wet tile is reported", dry_tiles ~= nil and #dry_tiles == 6,
+      "got " .. tostring(dry_tiles and #dry_tiles))
+
+    local wet, wet_reason = plan.build(surface, force, anchor, resolved, wet_options)
+    check("the switch bridges it", wet ~= nil, tostring(wet_reason and wet_reason[1]))
+    if wet then
+      local tally = count_kinds(wet.specs)
+      check("one landfill spec per wet tile", tally.landfill == 6, "got " .. tostring(tally.landfill))
+      check("belts still cover all 30 tiles", tally.belt == 30, "got " .. tostring(tally.belt))
+      local name, mixed = cover_names(wet.specs)
+      check("water is covered with landfill", name == "landfill" and not mixed,
+        string.format("name %s mixed %s", tostring(name), tostring(mixed)))
+    end
+  else
+    line("  SKIP  no water tile to lay")
+  end
+
+  -- A different water tile, still in base: the name must follow the prototype.
+  local deep = prototypes.tile["deepwater"]
+  if deep and deep.default_cover_tile and lay("deepwater") then
+    local expected = deep.default_cover_tile.name
+    local over_deep = plan.build(surface, force, anchor, resolved, wet_options)
+    check("deepwater plans with the switch on", over_deep ~= nil)
+    if over_deep then
+      local name, mixed = cover_names(over_deep.specs)
+      check("deepwater is covered with its prototype's cover tile",
+        name == expected and not mixed,
+        string.format("wanted %s got %s", expected, tostring(name)))
+    end
+  else
+    line("  SKIP  no deepwater tile with a cover")
+  end
+
+  -- The case the change exists for: a water-layer tile whose cover is NOT
+  -- landfill. Base has none, so this only runs with Space Age (lava, the oil
+  -- ocean, the ammoniacal ocean, empty space) or a mod that adds one.
+  local foreign_name, foreign_cover
+  for name, tile in pairs(prototypes.tile) do
+    local cover = tile.default_cover_tile
+    if tile.collision_mask.layers.water_tile and cover and cover.name ~= "landfill" then
+      foreign_name, foreign_cover = name, cover.name
+      break
+    end
+  end
+  if foreign_name and lay(foreign_name) then
+    local over_foreign, foreign_reason = plan.build(surface, force, anchor, resolved, wet_options)
+    check(foreign_name .. " plans with the switch on", over_foreign ~= nil,
+      tostring(foreign_reason and foreign_reason[1]))
+    if over_foreign then
+      local name, mixed = cover_names(over_foreign.specs)
+      check(foreign_name .. " is covered with " .. foreign_cover .. ", not landfill",
+        name == foreign_cover and not mixed,
+        string.format("got %s mixed %s", tostring(name), tostring(mixed)))
+    end
+  else
+    line("  SKIP  no water-layer tile with a cover other than landfill (needs Space Age)")
+  end
+
+  -- Water that nothing covers is a wall even with the switch on. Found by
+  -- asking the prototypes rather than by name, because which tile that is
+  -- depends on what is loaded; out-of-map is the usual answer.
+  local bare_name
+  for name, tile in pairs(prototypes.tile) do
+    if tile.collision_mask.layers.water_tile and not tile.default_cover_tile then
+      bare_name = name
+      break
+    end
+  end
+  if bare_name and lay(bare_name) then
+    local bare, bare_reason, bare_tiles = plan.build(surface, force, anchor, resolved, wet_options)
+    check(bare_name .. " refuses the run even with the switch on", bare == nil)
+    check("refusal is a plain blockage",
+      bare_reason and bare_reason[1] == "beltplanner.error-blocked",
+      tostring(bare_reason and bare_reason[1]))
+    check("every uncoverable tile is reported", bare_tiles ~= nil and #bare_tiles == 6,
+      "got " .. tostring(bare_tiles and #bare_tiles))
+  else
+    line("  SKIP  no water-layer tile without a cover tile")
+  end
+
+  -- Dry land again for everything that follows.
+  check("ground restored after the water tests", lay(ground_name))
+
+  ----------------------------------------------------------------------------
   line("--- probe selection priority ---")
 
   -- These two facts are what keep the tracker from taking the cursor off the
