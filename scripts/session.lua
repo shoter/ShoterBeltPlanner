@@ -127,6 +127,13 @@ function session.update_preview(player)
     end
 
     if last and last.x == tile.x and last.y == tile.y then return end
+
+    -- Counted so the diagnostics can say whether the engine keeps updating the
+    -- selection while a mouse button is held. If this stays at zero for a whole
+    -- drag, a live rectangle is not possible and the tool should stop pretending
+    -- otherwise.
+    pdata.drag_updates = (pdata.drag_updates or 0) + 1
+
     preview.show_drag(player, pdata, pdata.drag_from, tile)
     pdata.preview_tile = tile
     return
@@ -279,7 +286,9 @@ function session.on_press(player, position)
     local from = { x = math.floor(position.x), y = math.floor(position.y) }
     pdata.drag_from = from
     pdata.drag_tick = game.tick
+    pdata.drag_updates = 0
     pdata.preview_tile = nil
+    pdata.saw_press = true
 
     -- Mark the starting tile straight away rather than waiting for the tracker.
     -- Whether the engine keeps updating the selection while a mouse button is
@@ -295,7 +304,13 @@ function session.on_select(player, area, force_new_anchor)
   local pdata = session.get(player.index)
 
   -- The drag is over, whatever it produced.
+  if storage.debug_tracker then
+    player.print({ "beltplanner.drag-report",
+      pdata.saw_press and "yes" or "NO",
+      pdata.drag_updates or 0 })
+  end
   pdata.drag_from = nil
+  pdata.saw_press = nil
   pdata.preview_tile = nil
 
   if force_new_anchor or not pdata.anchor then

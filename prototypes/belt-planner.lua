@@ -122,6 +122,17 @@ data:extend({
     consuming = "none",
     order = "e",
   },
+  -- The same thing again through the vanilla control that actually starts a
+  -- selection. A raw mouse-button-1 binding may not survive the selection tool
+  -- taking the click; this one cannot miss it, whatever the player has bound.
+  {
+    type = "custom-input",
+    name = "beltplanner-select-press",
+    key_sequence = "",
+    linked_game_control = "select-for-blueprint",
+    consuming = "none",
+    order = "f",
+  },
 
   -- Step through the belt tiers without leaving the tool.
   {

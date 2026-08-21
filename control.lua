@@ -83,6 +83,7 @@ end
 
 script.on_event("beltplanner-press", on_press)
 script.on_event("beltplanner-ctrl-press", on_press)
+script.on_event("beltplanner-select-press", on_press)
 
 --------------------------------------------------------------------------------
 -- the tool
