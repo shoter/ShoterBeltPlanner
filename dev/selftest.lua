@@ -558,13 +558,72 @@ function selftest.run()
     anchor.reversed = false
   end
 
-  line("--- corners that cannot be made ---")
-  local shallow, shallow_reason = geometry.resolve(anchor, { x = BX + 10, y = BY + 2 })
-  check("a turn too shallow for the width is refused", shallow == nil)
-  check("refusal names the shallow turn",
-    shallow_reason and shallow_reason[1] == "beltplanner.error-corner-too-shallow",
-    tostring(shallow_reason and shallow_reason[1]))
+  line("--- straight from any row of the bundle ---")
 
+  -- The 3-lane anchor covers rows BY, BY+1 and BY+2. A target on any of those
+  -- rows is a straight run: no corner is possible inside the bundle's own
+  -- width, so this is a definition rather than a guess. It used to be refused
+  -- as a turn too shallow for the width, which meant a wide bus could only be
+  -- carried on by pointing at lane 1's exact row.
+  local middle_row = geometry.resolve(anchor, { x = BX + 10, y = BY + 1 })
+  check("a target on the middle row resolves straight",
+    middle_row ~= nil and middle_row.curved == false,
+    tostring(middle_row and middle_row.curved))
+  check("and is as long as pointing at lane 1's row",
+    middle_row and middle_row.length == 11 and middle_row.along_sign == 1,
+    string.format("length %s sign %s",
+      tostring(middle_row and middle_row.length), tostring(middle_row and middle_row.along_sign)))
+
+  local last_row = geometry.resolve(anchor, { x = BX + 10, y = BY + 2 })
+  check("a target on the last row resolves straight",
+    last_row ~= nil and last_row.curved == false,
+    tostring(last_row and last_row.curved))
+  check("and is the same length", last_row and last_row.length == 11,
+    "got " .. tostring(last_row and last_row.length))
+
+  local just_past = geometry.resolve(anchor, { x = BX + 10, y = BY + 3 })
+  check("the first row outside the band is a corner again",
+    just_past ~= nil and just_past.curved == true,
+    tostring(just_past and just_past.curved))
+  local just_before = geometry.resolve(anchor, { x = BX + 10, y = BY - 1 })
+  check("so is the first row on the other side",
+    just_before ~= nil and just_before.curved == true,
+    tostring(just_before and just_before.curved))
+
+  -- Nothing ahead of the anchor can be refused now: inside the band it is
+  -- straight, outside it every lane has at least one tile of second leg.
+  local ahead_always_resolves = true
+  for cross = -6, 8 do
+    if geometry.resolve(anchor, { x = BX + 10, y = BY + cross }) == nil then
+      ahead_always_resolves = false
+    end
+  end
+  check("no target ahead of the anchor is refused, on any row", ahead_always_resolves)
+
+  -- Rows 2 and 3 plan exactly the belts row 1 does, not merely a run of the
+  -- same shape.
+  local function fingerprint(specs)
+    local entries = {}
+    for _, spec in ipairs(specs) do
+      entries[#entries + 1] = string.format("%s %s %s,%s %s",
+        spec.kind, tostring(spec.name), spec.position.x, spec.position.y, tostring(spec.direction))
+    end
+    table.sort(entries)
+    return table.concat(entries, ";")
+  end
+
+  local row1 = plan.build(surface, force, anchor, geometry.resolve(anchor, { x = BX + 9, y = BY }), options)
+  local row2 = plan.build(surface, force, anchor, geometry.resolve(anchor, { x = BX + 9, y = BY + 1 }), options)
+  local row3 = plan.build(surface, force, anchor, geometry.resolve(anchor, { x = BX + 9, y = BY + 2 }), options)
+  check("rows 1, 2 and 3 all plan", row1 ~= nil and row2 ~= nil and row3 ~= nil)
+  if row1 and row2 and row3 then
+    check("row 1 plans 30 belts", count_kinds(row1.specs).belt == 30,
+      "got " .. tostring(count_kinds(row1.specs).belt))
+    check("row 2 plans the same belts as row 1", fingerprint(row2.specs) == fingerprint(row1.specs))
+    check("row 3 plans the same belts as row 1", fingerprint(row3.specs) == fingerprint(row1.specs))
+  end
+
+  line("--- corners that cannot be made ---")
   local behind, behind_reason = geometry.resolve(anchor, { x = BX - 1, y = BY + 6 })
   check("a corner behind the anchor is refused", behind == nil,
     tostring(behind and "resolved anyway"))

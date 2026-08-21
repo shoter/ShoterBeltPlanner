@@ -139,6 +139,14 @@ end
 --- means "go this far, then turn once" - never "turn first", which would make
 --- one click mean two different routes.
 ---
+--- "Off to one side" means outside the bundle's own width. A target on any row
+--- the lanes already occupy - lane 1's, lane 16's, or one in between - is a
+--- straight run, not a corner: no corner is possible there, because the lane
+--- nearest the target would have nowhere to go after turning. So this is a
+--- definition of the target rather than a guess about intent, and it is what
+--- lets a wide bus be carried on by pointing anywhere across it instead of at
+--- the exact row of its first lane.
+---
 --- Returns a descriptor, or nil plus a LocalisedString.
 function geometry.resolve(anchor, target)
   local axis = anchor.axis
@@ -167,7 +175,9 @@ function geometry.resolve(anchor, target)
 
   local along_sign = sign_of(along_delta)
 
-  if cross_delta == 0 then
+  -- The lanes occupy cross0 .. cross0 + lanes - 1, so anything in that band is
+  -- straight, and the result is the same whichever row the player pointed at.
+  if cross_delta >= 0 and cross_delta <= lanes - 1 then
     return {
       axis = axis,
       curved = false,
@@ -184,15 +194,14 @@ function geometry.resolve(anchor, target)
   -- tile plus lanes-1 beyond it.
   local corner_base = along_sign > 0 and along_end or (along_end + lanes - 1)
 
-  -- Every lane needs somewhere to go before it turns, and somewhere to go after.
+  -- Every lane needs somewhere to go before it turns. Somewhere to go after is
+  -- already certain: the target is outside the band, so even the lane nearest
+  -- it has at least one tile of second leg, and a turn can never be too
+  -- shallow for the width.
   for index = 1, lanes do
     local corner_along = corner_base + along_sign * stagger(lanes, index, cross_sign)
     if (corner_along - along0) * along_sign < 0 then
       return nil, { "beltplanner.error-corner-too-close" }
-    end
-    local lane_cross = cross0 + (index - 1)
-    if (cross_end - lane_cross) * cross_sign < 1 then
-      return nil, { "beltplanner.error-corner-too-shallow", lanes }
     end
   end
 
