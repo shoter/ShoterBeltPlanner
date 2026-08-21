@@ -45,6 +45,9 @@ $IgnoreDirectories = @(
 $IgnoreFiles = @(
     '*.ps1'
     '*.ps1xml'
+    # Documentation is for the repository and the mod portal, not for the zip.
+    # Factorio reads changelog.txt, which is .txt, so nothing here is needed at runtime.
+    '*.md'
     '.gitignore'
     '.gitattributes'
     '*.zip'
