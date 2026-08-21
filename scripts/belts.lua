@@ -9,7 +9,18 @@
 -- underground itself, and `max_underground_distance` lives on the UNDERGROUND
 -- prototype, not on the belt.
 
+local preview_const = require("scripts/belt_preview_const")
+
 local belts = {}
+
+-- draw_animation takes a prototype name, and the four cardinal names are what
+-- the data stage sliced. Anything diagonal has no belt graphic to show.
+local DIRECTION_NAME = {
+  [defines.direction.north] = "north",
+  [defines.direction.east] = "east",
+  [defines.direction.south] = "south",
+  [defines.direction.west] = "west",
+}
 
 local cache
 
@@ -67,7 +78,16 @@ local function build()
     return a.belt < b.belt
   end)
 
-  return { tiers = tiers, order = order }
+  -- Which belts the data stage managed to slice a preview animation out of.
+  -- Belts whose graphics use layers, stripes or a filename list are absent and
+  -- fall back to their item icon.
+  local previewable = {}
+  local published = prototypes.mod_data[preview_const.MOD_DATA]
+  if published and type(published.data) == "table" then
+    for name in pairs(published.data) do previewable[name] = true end
+  end
+
+  return { tiers = tiers, order = order, previewable = previewable }
 end
 
 local function get()
@@ -89,6 +109,18 @@ end
 --- The slowest tier, used as the default before the player has chosen.
 function belts.default()
   return get().order[1]
+end
+
+--- The animation prototype that draws this belt facing this way, or nil when the
+--- belt's graphics could not be sliced and the icon has to stand in.
+function belts.preview_animation(belt_name, direction)
+  local cached = get()
+  if not cached.previewable[belt_name] then return nil end
+
+  local direction_name = DIRECTION_NAME[direction]
+  if not direction_name then return nil end
+
+  return preview_const.animation_name(belt_name, direction_name)
 end
 
 --- Invalidate the cache. Only needed if something reloads prototypes mid-session,

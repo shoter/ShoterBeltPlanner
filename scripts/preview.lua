@@ -9,6 +9,7 @@
 -- without clearing would leave marks on the map forever.
 
 local geometry = require("scripts/geometry")
+local belts = require("scripts/belts")
 
 local preview = {}
 
@@ -133,14 +134,31 @@ local function draw_specs(player, pdata, specs)
         players = { player },
       })
     else
-      store(pdata, rendering.draw_sprite {
-        sprite = "item/" .. spec.name,
-        target = spec.position,
-        x_scale = 0.5, y_scale = 0.5,
-        tint = BELT_TINT,
-        surface = surface,
-        players = { player },
-      })
+      -- The belt's own graphics, which sit in the tile the way a built belt
+      -- does. An item icon is a small picture OF a belt and never looked like
+      -- one lying on the ground. Belts whose sheet could not be sliced fall
+      -- back to the icon.
+      local animation = belts.preview_animation(spec.name, spec.direction)
+
+      if animation then
+        store(pdata, rendering.draw_animation {
+          animation = animation,
+          target = spec.position,
+          tint = BELT_TINT,
+          surface = surface,
+          players = { player },
+        })
+      else
+        store(pdata, rendering.draw_sprite {
+          sprite = "item/" .. spec.name,
+          target = spec.position,
+          x_scale = 0.5, y_scale = 0.5,
+          tint = BELT_TINT,
+          surface = surface,
+          players = { player },
+        })
+      end
+
       belt_index = belt_index + 1
     end
 

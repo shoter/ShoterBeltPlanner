@@ -101,6 +101,30 @@ function selftest.run()
 
   check("zero length is refused", geometry.resolve(anchor, { x = BX, y = BY }) == nil)
 
+  line("--- belt preview graphics ---")
+
+  -- The data stage slices these and publishes the list through mod-data; the
+  -- control stage reads it back. A mismatch in either the naming or the channel
+  -- is silent - the preview just falls back to item icons forever - so the
+  -- handshake is asserted rather than trusted.
+  local east = belts.preview_animation(tier.belt, defines.direction.east)
+  check("the default belt has a preview animation", east ~= nil, tier.belt)
+  check("it is named for the belt and the direction",
+    east == "beltplanner-preview-" .. tier.belt .. "-east", tostring(east))
+
+  local all_four = true
+  for _, dir in ipairs({ defines.direction.north, defines.direction.east,
+                         defines.direction.south, defines.direction.west }) do
+    if not belts.preview_animation(tier.belt, dir) then all_four = false end
+  end
+  check("all four facings are sliced", all_four)
+
+  check("a diagonal has no belt graphic to show",
+    belts.preview_animation(tier.belt, defines.direction.northeast) == nil)
+  check("an unknown belt has none either",
+    belts.preview_animation("beltplanner-not-a-belt", defines.direction.east) == nil)
+
+  ----------------------------------------------------------------------------
   line("--- two-click anchor sizing ---")
 
   -- Snapped to the longer delta, so the shape is always a legal line and the

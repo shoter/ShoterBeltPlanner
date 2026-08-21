@@ -26,6 +26,12 @@ Date: 2026-08-21
       the tunnels, the clearing - behaves exactly as it would have. The bundle has to be an even
       number of lanes wide and the run straight, and both are refused rather than approximated.
     - Shift+B steps through the belt tiers without leaving the tool.
+  Graphics:
+    - The preview draws belts with the belt's own graphics instead of its item icon, so a previewed
+      belt sits in its tile the way a built one does. An item icon is a small picture of a belt, not
+      a belt, and never looked like one lying on the ground. Belts whose graphics are built from
+      layers or stripes rather than a single sheet keep the icon, since there is no single row to
+      take.
   Changes:
     - The starting tiles are set with two clicks rather than a drag: click where the belts start,
       move out to set how many lanes wide, click again. The marked area follows the pointer the
