@@ -91,6 +91,7 @@ function planner_gui.open(player)
       checkbox("clear_built", { "beltplanner.gui-clear" }, { "beltplanner.gui-clear-tip" }, pdata.clear_built),
       { type = "line" },
       { type = "label", name = "beltplanner_status", caption = "" },
+      { type = "label", name = "beltplanner_tally", caption = "" },
     },
   })
 
@@ -116,7 +117,7 @@ function planner_gui.close(player)
 end
 
 --- Update the parts that change without rebuilding: the chosen tier and the
---- one-line summary of the run in progress.
+--- status lines for the run in progress.
 function planner_gui.refresh(player)
   local window = player.gui.left[ROOT]
   if not window then return end
@@ -136,19 +137,64 @@ function planner_gui.refresh(player)
     end
   end
 
+  planner_gui.refresh_status(player, pdata.summary)
+end
+
+--- The two status lines: what the run is, and what the click will cost.
+---
+--- `summary` is what session last handed over through its hook, or nil. With a
+--- planned run in hand the first line is the run's own description - lanes,
+--- tiles, throughput - with the gesture hints after it, and the second line is
+--- the tally; these are the very same LocalisedStrings the cursor label draws.
+--- Without one the lines fall back to the state texts, so a refusal or a pointer
+--- off the map reads as "running" rather than as a stale count.
+function planner_gui.refresh_status(player, summary)
+  local window = player.gui.left[ROOT]
+  if not window then return end
+
+  local body = window["beltplanner_body"]
+  if not body then return end
+
   local status = body["beltplanner_status"]
-  if status then
-    local anchor = pdata.anchor
-    if anchor then
-      status.caption = anchor.reversed
-          and { "beltplanner.gui-status-reversed", anchor.lanes }
-        or { "beltplanner.gui-status", anchor.lanes }
-    elseif pdata.anchor_origin then
-      status.caption = { "beltplanner.gui-status-sizing" }
-    else
-      status.caption = { "beltplanner.gui-status-idle" }
+  local cost = body["beltplanner_tally"]
+  if not status then return end
+
+  local pdata = session.get(player.index)
+  local anchor = pdata.anchor
+
+  if anchor and summary then
+    status.caption = { "beltplanner.gui-status-planned", summary.run }
+    if cost then
+      -- Hidden rather than blanked: an empty label still takes a row.
+      cost.caption = summary.cost or ""
+      cost.visible = summary.cost ~= nil
     end
+    return
   end
+
+  if anchor then
+    status.caption = anchor.reversed
+        and { "beltplanner.gui-status-reversed", anchor.lanes }
+      or { "beltplanner.gui-status", anchor.lanes }
+  elseif pdata.anchor_origin then
+    status.caption = { "beltplanner.gui-status-sizing" }
+  else
+    status.caption = { "beltplanner.gui-status-idle" }
+  end
+  if cost then
+    cost.caption = ""
+    cost.visible = false
+  end
+end
+
+--------------------------------------------------------------------------------
+-- session hook
+
+-- session cannot require this file - this file requires session - so it leaves
+-- a hook for the window to fill in. Set at file scope so it is in place on every
+-- load, the same as the handlers above.
+session.on_summary = function(player, summary)
+  planner_gui.refresh_status(player, summary)
 end
 
 return planner_gui

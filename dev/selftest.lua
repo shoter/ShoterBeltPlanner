@@ -8,6 +8,9 @@ local place = require("scripts/logic/place")
 local belts = require("scripts/belts")
 local cursor_const = require("scripts/cursor/const")
 local tracker = require("scripts/cursor/tracker")
+-- Not `tally`: the sections below each keep a local of that name for their own
+-- count of spec kinds, and shadowing the module would be an easy mistake.
+local cost_tally = require("scripts/tally")
 
 local selftest = {}
 
@@ -360,6 +363,106 @@ function selftest.run()
   end
 
   ----------------------------------------------------------------------------
+  line("--- the tally: what the label and the window say a click costs ---")
+
+  -- The label and the window quote the same tally, taken off the spec list the
+  -- click commits, so the numbers are checked against a run whose cost is
+  -- known: six tiles of water across all three lanes, two trees, and one chest
+  -- of the player's own with the clearing switch on.
+  local yellow = belts.get("transport-belt")
+  check("yellow belt is 15 items/s", yellow ~= nil and cost_tally.throughput(yellow) == 15,
+    "got " .. tostring(yellow and cost_tally.throughput(yellow)))
+
+  if yellow and tree_name and prototypes.tile["water"] then
+    local ground = prototypes.tile["grass-1"] and "grass-1" or "landfill"
+    local function flood(name)
+      local tiles = {}
+      for x = BX + 2, BX + 3 do
+        for y = BY, BY + 2 do
+          tiles[#tiles + 1] = { name = name, position = { x, y } }
+        end
+      end
+      surface.set_tiles(tiles)
+    end
+    flood("water")
+
+    local felled = {
+      surface.create_entity { name = tree_name, position = { BX + 5.5, BY + 0.5 } },
+      surface.create_entity { name = tree_name, position = { BX + 6.5, BY + 1.5 } },
+    }
+    local chest = surface.create_entity {
+      name = "steel-chest", position = { BX + 8.5, BY + 2.5 }, force = force,
+    }
+    check("tally fixtures placed", felled[1] ~= nil and felled[2] ~= nil and chest ~= nil)
+
+    local costed_options = { tier = yellow, landfill = true, max_tiles = 10000, clear_built = true }
+    local costed, costed_reason = plan.build(surface, force, anchor, resolved, costed_options)
+    check("the costed run plans", costed ~= nil, tostring(costed_reason and costed_reason[1]))
+
+    if costed then
+      local counts = cost_tally.count(costed.specs)
+      check("tally counts 30 belts", counts.belts == 30, "got " .. tostring(counts.belts))
+      check("tally counts 6 landfill", counts.landfill == 6, "got " .. tostring(counts.landfill))
+      check("tally counts 2 trees/rocks", counts.natural == 2, "got " .. tostring(counts.natural))
+      check("tally counts 1 of your buildings", counts.owned == 1, "got " .. tostring(counts.owned))
+      check("tally counts nothing that is not there",
+        counts.splitters == 0 and counts.undergrounds == 0,
+        string.format("splitters=%s undergrounds=%s", tostring(counts.splitters), tostring(counts.undergrounds)))
+
+      local summary = cost_tally.summary(anchor, costed, yellow)
+      local run = summary.run
+      check("run line is the preview label", run[1] == "beltplanner.preview-label", tostring(run[1]))
+      check("run line says 3 lanes over 30 tiles", run[2] == 3 and run[3] == 30,
+        string.format("got %s, %s", tostring(run[2]), tostring(run[3])))
+      check("run line says 45 items/s for three yellow lanes", run[4] == "45", tostring(run[4]))
+      check("run line has no reversed suffix", run[5] == "", tostring(run[5]))
+
+      -- The cost line is fragments joined in Lua, which is what lets each be
+      -- translated; the join has to stay under the 20-parameter limit with
+      -- room for every kind the tally knows.
+      local cost = summary.cost
+      check("cost line exists", cost ~= nil)
+      if cost then
+        check("cost line is a concatenation", cost[1] == "", tostring(cost[1]))
+        check("cost line is within the parameter limit", #cost <= 20, "got " .. #cost)
+        local named = {}
+        for index = 2, #cost do
+          local part = cost[index]
+          if part[1] ~= "beltplanner.tally-separator" then
+            named[#named + 1] = part[1] .. "=" .. tostring(part[2])
+          end
+        end
+        check("cost line names only the non-zero parts, in order",
+          table.concat(named, " ") ==
+            "beltplanner.tally-belts=30 beltplanner.tally-landfill=6 beltplanner.tally-natural=2 beltplanner.tally-owned=1",
+          table.concat(named, " "))
+        check("separators sit between the parts, never at the ends",
+          cost[2][1] ~= "beltplanner.tally-separator"
+            and cost[#cost][1] ~= "beltplanner.tally-separator"
+            and #cost == 2 * #named)
+      end
+
+      anchor.reversed = true
+      local reversed_summary = cost_tally.summary(anchor, costed, yellow)
+      check("reversed run line carries the suffix",
+        type(reversed_summary.run[5]) == "table"
+          and reversed_summary.run[5][1] == "beltplanner.reversed-suffix",
+        tostring(reversed_summary.run[5]))
+      anchor.reversed = false
+    end
+
+    -- Nothing to name, nothing said: the window hides the line rather than
+    -- showing an empty one.
+    check("an empty list has no cost line", cost_tally.cost_line(cost_tally.count({})) == nil)
+
+    for _, tree in ipairs(felled) do if tree and tree.valid then tree.destroy() end end
+    if chest and chest.valid then chest.destroy() end
+    flood(ground)
+  else
+    line("  SKIP  tally fixtures unavailable (yellow belt, a tree and water are needed)")
+  end
+
+  ----------------------------------------------------------------------------
   line("--- probe selection priority ---")
 
   -- These two facts are what keep the tracker from taking the cursor off the
@@ -609,6 +712,13 @@ function selftest.run()
         string.format("got %s,%s", splitter.position.x, splitter.position.y))
       check("splitter faces the flow", splitter.direction == defines.direction.east,
         "got " .. tostring(splitter.direction))
+
+      -- The preview never plans splitters today, but the tally must already
+      -- count them for the day it does.
+      local counts = cost_tally.count(split_result.specs)
+      check("tally counts the splitter and the belts leading to it",
+        counts.splitters == 1 and counts.belts == 18,
+        string.format("splitters=%s belts=%s", tostring(counts.splitters), tostring(counts.belts)))
     end
 
     pair.reversed = true
