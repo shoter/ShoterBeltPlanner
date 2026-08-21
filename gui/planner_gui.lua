@@ -277,6 +277,20 @@ function planner_gui.refresh_status(player, summary)
   local pdata = session.get(player.index)
   local anchor = pdata.anchor
 
+  -- The zoomed-out map (remote view at chart zoom) selects nothing, so the
+  -- tracker cannot see the pointer there and no instruction about clicking can
+  -- be followed. Read here directly: there is no event for the render mode
+  -- changing, and this is what every caller of refresh wants shown. The tally
+  -- goes with it: a count from before the zoom-out would be stale.
+  if player.render_mode == defines.render_mode.chart then
+    status.caption = { "beltplanner.gui-status-chart" }
+    if cost then
+      cost.caption = ""
+      cost.visible = false
+    end
+    return
+  end
+
   if anchor and summary then
     status.caption = { "beltplanner.gui-status-planned", summary.run }
     if cost then

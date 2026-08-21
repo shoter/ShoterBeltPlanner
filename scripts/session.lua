@@ -331,6 +331,10 @@ function session.enter(player)
   -- A previous failure switched the preview off; taking the tool out again is
   -- the retry.
   pdata.preview_broken = nil
+  -- Remembered so a controller change can tell whether the run is still on the
+  -- surface it was planned on. Every surface change re-enters, so this is always
+  -- the surface any anchor was made on.
+  pdata.surface_index = player.surface.index
   tracker.start(player)
 end
 
@@ -338,6 +342,31 @@ end
 function session.leave(player)
   session.cancel(player, true)
   tracker.stop(player.index)
+end
+
+--- The player's controller changed while the tool stayed in hand: entering or
+--- leaving remote view, mostly. The pointer is now somewhere else, and may be
+--- on another surface, and the engine does not always announce the surface part
+--- of that separately.
+---
+--- A run anchored on this same surface is still exactly where it was made, and
+--- stepping out to the map to see where a long run should end is a perfectly
+--- good reason to change controller, so it is kept. Only the probe field has to
+--- be rebuilt, around wherever the pointer has gone. A different surface is a
+--- different matter: the anchor names tiles that are not here, so that is the
+--- same as a surface change.
+function session.relocate(player)
+  local pdata = session.get(player.index)
+  if not tracker.is_tracking(player.index) or pdata.surface_index ~= player.surface.index then
+    -- Either the tool arrived in the cursor by way of the controller change
+    -- itself, with no cursor-stack event to set things up, or the surface is
+    -- not the one the run was made on. Both are a fresh start.
+    session.leave(player)
+    session.enter(player)
+    return
+  end
+  -- start() clears any field it finds first, so this is a restart.
+  tracker.start(player)
 end
 
 function session.flip(player)

@@ -319,6 +319,51 @@ script.on_event(defines.events.on_player_changed_surface, function(event)
 end)
 
 --------------------------------------------------------------------------------
+-- remote view
+
+-- Entering or leaving remote view changes the player's controller, and with it
+-- what player.surface and player.position mean: in remote view they follow the
+-- view, not the character. So the pointer can land on another surface, or far
+-- away on this one, without on_player_changed_surface being raised - that only
+-- fires when the surface genuinely differs, and stepping out to the map of the
+-- planet you are standing on does not change it.
+--
+-- The cursor is the player's rather than the controller's, so the tool normally
+-- stays in hand across the change; but nothing promises that for every
+-- controller (a spectator has no cursor stack at all), so the stack is checked
+-- afresh rather than assumed, and a controller that lost the tool is treated
+-- exactly like putting it away.
+script.on_event(defines.events.on_player_controller_changed, function(event)
+  local player = game.get_player(event.player_index)
+  if not player then
+    tracker.stop(event.player_index)
+    return
+  end
+
+  if holding_tool(player) then
+    session.relocate(player)
+    planner_gui.open(player)
+    safe_update_preview(player)
+  else
+    session.leave(player)
+    planner_gui.close(player)
+  end
+end)
+
+-- The zoomed-out map has no entity selection, so the tracker cannot see the
+-- pointer there and the window should say why rather than sit on a stale
+-- instruction. There is no event for the render mode changing; it is read in
+-- the handlers that already fire while the pointer is being followed, and the
+-- window is only touched when the answer flips. One property read per event.
+local function note_render_mode(player)
+  local pdata = session.get(player.index)
+  local in_chart = player.render_mode == defines.render_mode.chart
+  if pdata.status_in_chart == in_chart then return end
+  pdata.status_in_chart = in_chart
+  planner_gui.refresh(player)
+end
+
+--------------------------------------------------------------------------------
 -- cursor tracker (M0 scaffolding)
 --
 -- Temporary: once the tracker is wired into the preview, tracking starts and
@@ -377,6 +422,8 @@ script.on_event(defines.events.on_selected_entity_changed, function(event)
   local player = game.get_player(event.player_index)
   if not player then return end
 
+  note_render_mode(player)
+
   -- The tracker has just narrowed the pointer down; redraw what would be built
   -- from here. update_preview is a no-op unless the pointer changed tile.
   safe_update_preview(player)
@@ -386,7 +433,15 @@ script.on_event(defines.events.on_selected_entity_changed, function(event)
   end
 end)
 
-script.on_event(defines.events.on_player_changed_position, tracker.on_player_moved)
+-- In remote view the position is the view, so panning the map lands here too;
+-- that is what makes it the right place to notice the map being zoomed out.
+script.on_event(defines.events.on_player_changed_position, function(event)
+  tracker.on_player_moved(event)
+
+  if not tracker.is_tracking(event.player_index) then return end
+  local player = game.get_player(event.player_index)
+  if player then note_render_mode(player) end
+end)
 
 -- Which forces may see the probes is recomputed from which forces have someone
 -- tracking, so it goes stale when the set of forces or their membership changes.
