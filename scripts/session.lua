@@ -76,6 +76,12 @@ end
 --- setting at all - the settings stage runs before any prototype exists, so
 --- there is nothing to build an allowed_values list from.
 function session.ensure_defaults(player, pdata)
+  -- The settled case - both fields already seeded - is hit on every re-plan,
+  -- one per tile the pointer crosses, and get_player_settings is a Lua-to-C++
+  -- crossing that allocates. Once there is nothing left to seed, the settings
+  -- are not worth asking for.
+  if pdata.landfill ~= nil and pdata.clear_cliffs ~= nil then return end
+
   local per_user = settings.get_player_settings(player)
 
   if pdata.landfill == nil then

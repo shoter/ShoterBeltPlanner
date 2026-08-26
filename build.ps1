@@ -125,6 +125,32 @@ function Copy-Tree {
     }
 }
 
+# Compress-Archive under Windows PowerShell 5.1 writes '\' as the entry-name
+# separator, which the mod portal rejects and Linux/macOS Factorio cannot read.
+# Write the zip through .NET instead, forcing '/' whatever edition runs this.
+function New-ModZip {
+    param(
+        [Parameter(Mandatory)][string]$StagingRoot,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+
+    $archive = [System.IO.Compression.ZipFile]::Open($Destination, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $files = Get-ChildItem -LiteralPath $StagingRoot -Recurse -File -Force | Sort-Object FullName
+        foreach ($file in $files) {
+            $entryName = $file.FullName.Substring($StagingRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $file.FullName, $entryName,
+                [System.IO.Compression.CompressionLevel]::Optimal)
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
 # Staging folder: <temp>\<guid>\ShoterBeltPlanner
 $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
 $stagingMod  = Join-Path $stagingRoot $ModName
@@ -138,7 +164,7 @@ try {
         Remove-Item -LiteralPath $zipPath -Force
     }
 
-    Compress-Archive -Path $stagingMod -DestinationPath $zipPath -CompressionLevel Optimal -Force
+    New-ModZip -StagingRoot $stagingRoot -Destination $zipPath
 
     $sizeKb = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1KB, 1)
     Write-Host "Created dist/$zipName ($sizeKb KB)" -ForegroundColor Green

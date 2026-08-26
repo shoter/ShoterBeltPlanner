@@ -6,34 +6,36 @@ local const = {}
 const.NAME_PREFIX = "beltplanner-tracker-"
 const.FORCE_NAME  = "beltplanner-tracker"
 
--- The tracker is a quadtree of invisible probes. A probe of size 2^pow is
--- subdivided into SUBDIVISIONS^2 children of size 2^(pow-1) when the cursor
--- lands on it, so the search narrows one level per tick until it reaches
--- MIN_POW, which is the resolution the cursor position is reported at (one tile).
-const.SUBDIVISIONS = 2
--- The game draws its own selection box round whatever the cursor is over, and
--- that is always one of these probes while the tool is held. Only the leaf's box
--- is ever seen: the tracker drops the selection as soon as a coarser probe has
--- been subdivided, because otherwise every level in this range flashes past as a
--- box of its own size and the tool looks like it is picking areas it is not.
+-- The ladder of probe sizes, coarse -> fine. When the cursor lands on a probe
+-- it is replaced underneath by children one rung finer, which tile it exactly,
+-- and the child covering the pointer is highlighted next tick. Each rung costs
+-- ONE TICK of input lag -- the engine only reports the new selection on the
+-- following tick -- so the ladder is kept shallow rather than binary:
+-- 32 -> 8 -> 1 converges in two ticks from cold instead of five.
 --
--- The range is still kept short, since each level costs a tick of input lag: one
--- tile is as precise as the planner ever needs, and 32 still catches the cursor
--- anywhere on screen.
-const.MIN_POW      = 0   -- 2^0 = one tile
-const.MAX_POW      = 5   -- 2^5 = 32 tiles per root probe
+-- The wide rungs also buy latency where it is felt most. The 64 leaves blanket
+-- an 8x8-tile area, so ordinary mouse movement inside it lands straight on a
+-- sibling leaf and costs no ticks at all; and the 16 mid probes tile the whole
+-- 32-cell, so any move within the current root cell costs at most one tick --
+-- even over machines, since every non-root probe outranks real entities.
+--
+-- The game draws its own selection box round whatever the cursor is over, and
+-- that is always one of these probes while the tool is held. Only the leaf's
+-- box is ever seen: the tracker drops the selection as soon as a coarser probe
+-- has been subdivided, because otherwise every rung flashes past as a box of
+-- its own size and the tool looks like it is picking areas it is not.
+--
+-- One tile is as precise as the planner ever needs, and 32 still catches the
+-- cursor anywhere on screen. Sizes must be powers of two (the names carry
+-- log2) and each must divide its parent evenly (the children tile it).
+local SIZES = { 32, 8, 1 }
 
 -- Roots are a ROOT_SPAN x ROOT_SPAN block, so 7 covers 224x224 tiles for 49
 -- entities. The block follows the POINTER, not the player: anchoring it to the
 -- character meant the preview simply stopped once the cursor was more than about
 -- eighty tiles away, which is well within what a zoomed-out screen shows.
---
--- It is re-centred before the pointer can reach the edge rather than after, so
--- there is never a gap where nothing is tracked. RECENTRE_DISTANCE is measured
--- from the block's centre and leaves at least one whole root cell of margin.
 const.ROOT_SPAN        = 7
 const.RESEED_DISTANCE  = 32
-const.RECENTRE_DISTANCE = (math.floor(const.ROOT_SPAN / 2) - 1) * (const.SUBDIVISIONS ^ const.MAX_POW)
 
 -- A negative power would make a name like "...-tracker--1"; spell it "m1".
 local function level_name(pow)
@@ -42,22 +44,37 @@ end
 const.level_name = level_name
 
 const.levels  = {}  -- coarse -> fine
-const.by_pow  = {}
 const.by_name = {}
 
-for pow = const.MAX_POW, const.MIN_POW, -1 do
-  local size = const.SUBDIVISIONS ^ pow
+for index, size in ipairs(SIZES) do
+  -- Names carry log2(size), exactly as they did when the ladder was binary.
+  -- That is deliberate: a probe whose size survives a version change keeps a
+  -- valid prototype in old saves, and one whose size was dropped loses its
+  -- prototype and is deleted by the engine on load -- no migration needed.
+  local pow = 0
+  while 2 ^ pow < size do pow = pow + 1 end
+  assert(2 ^ pow == size, "probe sizes must be powers of two")
+
+  local parent = const.levels[index - 1]
+  assert(not parent or parent.size % size == 0, "each probe size must divide its parent")
+
   local level = {
-    pow     = pow,
+    index   = index,          -- 1-based, coarse -> fine
+    pow     = pow,            -- log2(size); only the name is derived from it
     size    = size,
     half    = size / 2,
     name    = level_name(pow),
-    is_root = (pow == const.MAX_POW),
-    is_leaf = (pow == const.MIN_POW),
+    is_root = (index == 1),
+    is_leaf = (index == #SIZES),
+    parent  = parent,         -- the level one rung coarser, nil for the root
+    child   = nil,            -- the level one rung finer, filled in below
+    -- Children per axis when tiling the parent cell; nil for the root.
+    per_parent = parent and (parent.size / size) or nil,
     -- A child sits inside its parent, so both are under the cursor at once, and
     -- priority has to rise as the box shrinks or the descent stalls on the
-    -- parent. 255 is the engine maximum; staying under it leaves other mods room
-    -- to outrank us deliberately.
+    -- parent: 252 for the mid probes, 253 for the leaves. 255 is the engine
+    -- maximum; staying under it leaves other mods room to outrank us
+    -- deliberately.
     --
     -- The ROOTS are the exception and sit below everything instead. They tile a
     -- 224x224 block, so at high priority they take the cursor off every real
@@ -79,14 +96,21 @@ for pow = const.MAX_POW, const.MIN_POW, -1 do
     -- entities rather than lose to them. Nothing complains -- the prototype
     -- simply reads back as 50 - so the self-test asserts the value the engine
     -- ended up with rather than the one written here.
-    selection_priority = (pow == const.MAX_POW) and 1 or (250 + (const.MAX_POW - 1 - pow)),
+    selection_priority = (index == 1) and 1 or (250 + index),
   }
-  const.levels[#const.levels + 1] = level
-  const.by_pow[pow]         = level
+  if parent then parent.child = level end
+
+  const.levels[index]       = level
   const.by_name[level.name] = level
 end
 
-const.root = const.by_pow[const.MAX_POW]
-const.leaf = const.by_pow[const.MIN_POW]
+const.root = const.levels[1]
+const.leaf = const.levels[#const.levels]
+
+-- The root block is re-centred before the pointer can reach the edge rather
+-- than after, so there is never a gap where nothing is tracked.
+-- RECENTRE_DISTANCE is measured from the block's centre and leaves at least one
+-- whole root cell of margin.
+const.RECENTRE_DISTANCE = (math.floor(const.ROOT_SPAN / 2) - 1) * const.root.size
 
 return const

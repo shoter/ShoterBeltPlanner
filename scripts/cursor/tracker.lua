@@ -4,17 +4,18 @@
 -- LuaControl.selected changed, so the pointer is located by covering the area in
 -- invisible probes and watching which one the engine highlights.
 --
--- The probes form a quadtree. A root probe is 2^MAX_POW tiles across; when the
--- cursor highlights it, it is replaced underneath by its children, each half the
--- width. The child covering the pointer is highlighted on the next tick and the
--- process repeats, so the search halves its uncertainty every tick until it
--- reaches the leaf size. That costs one tick per level from cold, but ordinary
--- mouse movement only leaves the deepest probe, so it usually re-converges in
--- one or two ticks.
+-- The probes form a shallow tree over the size ladder in cursor/const: a
+-- 32-tile root is replaced underneath by 16 eight-tile probes when the cursor
+-- lands on it, and an eight-tile probe by 64 one-tile leaves. Each rung costs
+-- one tick -- the engine reports the new selection next tick -- so a cold
+-- descent converges in two. Ordinary movement is cheaper still: inside the
+-- 8x8-tile leaf field the pointer lands straight on a sibling leaf for zero
+-- ticks, and anywhere else in the current 32-cell the mid probes (which
+-- outrank real entities) catch it in one.
 --
--- Only SUBDIVISIONS^2 probes exist per level per player, plus ROOT_SPAN^2 roots,
--- so a tracked player owns a few dozen entities and no more, however far the
--- cursor roams. They are destroyed the moment tracking stops.
+-- Per tracked player that is ROOT_SPAN^2 = 49 roots plus 16 mid probes plus 64
+-- leaves -- 129 entities and no more, however far the cursor roams. They are
+-- destroyed the moment tracking stops.
 
 local const = require("scripts/cursor/const")
 
@@ -110,18 +111,22 @@ local function create_probe(surface, level, x, y, force)
   return entity
 end
 
-local function destroy_level(pdata, pow)
-  local list = pdata.probes[pow]
+-- pdata.probes is keyed by level SIZE (32/8/1). An old save may hold stale
+-- keys from a previous ladder; their entities either lost their prototype and
+-- were dropped by the engine on load, or are destroyed here like any others,
+-- because this iterates whatever keys exist rather than the current ladder.
+local function destroy_level(pdata, size)
+  local list = pdata.probes[size]
   if not list then return end
   for _, entity in pairs(list) do
     if entity.valid then entity.destroy() end
   end
-  pdata.probes[pow] = nil
+  pdata.probes[size] = nil
 end
 
 local function destroy_all_probes(pdata)
-  for pow in pairs(pdata.probes) do
-    destroy_level(pdata, pow)
+  for size in pairs(pdata.probes) do
+    destroy_level(pdata, size)
   end
   pdata.probes = {}
 end
@@ -132,7 +137,7 @@ end
 --- A descent normally costs a tick per level, because each level has to be
 --- SELECTED before the next one is created. That is invisible while the pointer
 --- is already being followed, but every re-seed starts from cold, and cold is
---- where the lag was: five ticks at best, and unbounded over a machine or an ore
+--- where the lag was: two ticks at best, and unbounded over a machine or an ore
 --- patch, since a root deliberately loses to those and so is never selected at
 --- all. Re-seeding happens on the ordinary business of moving the pointer across
 --- the screen, which is why it was felt as an occasional long stall.
@@ -150,22 +155,24 @@ end
 local function seed_descent(pdata, surface, centre)
   local force = ensure_force()
 
-  for pow = const.MAX_POW - 1, const.MIN_POW, -1 do
-    local level = const.by_pow[pow]
-    local parent = const.by_pow[pow + 1]
+  for i = 2, #const.levels do
+    local level = const.levels[i]
+    local parent = level.parent
     local size = level.size
 
-    destroy_level(pdata, pow)
+    destroy_level(pdata, size)
 
-    -- Every level is aligned to the global grid of its own size - that is where
-    -- a real subdivision lands too - so a guessed probe is indistinguishable
-    -- from a placed one and the descent can pick up from either.
+    -- Each level tiles the parent-size-aligned cell containing the pointer,
+    -- and is therefore aligned to the global grid of its own size too - that
+    -- is where a real subdivision lands as well - so a guessed probe is
+    -- indistinguishable from a placed one and the descent can pick up from
+    -- either.
     local left = floor(centre.x / parent.size) * parent.size
     local top = floor(centre.y / parent.size) * parent.size
 
     local list = {}
-    for ix = 0, const.SUBDIVISIONS - 1 do
-      for iy = 0, const.SUBDIVISIONS - 1 do
+    for ix = 0, level.per_parent - 1 do
+      for iy = 0, level.per_parent - 1 do
         local entity = create_probe(surface, level,
           left + (ix + 0.5) * size,
           top + (iy + 0.5) * size,
@@ -173,7 +180,7 @@ local function seed_descent(pdata, surface, centre)
         if entity then list[#list + 1] = entity end
       end
     end
-    pdata.probes[pow] = list
+    pdata.probes[size] = list
   end
 end
 tracker.seed_descent = seed_descent
@@ -203,7 +210,7 @@ local function seed_roots(pdata, player, centre)
     end
   end
 
-  pdata.probes[level.pow] = list
+  pdata.probes[level.size] = list
   pdata.root_center = { x = origin.x, y = origin.y }
   pdata.surface_index = surface.index
 
@@ -215,18 +222,22 @@ end
 -- Replace one probe with its children. The children tile the parent exactly, so
 -- whichever one covers the pointer is highlighted next tick. The previous
 -- generation at this depth is dropped first, which is what keeps the entity
--- count flat instead of leaving a trail behind the cursor.
-local function subdivide(pdata, parent, level)
-  local child = const.by_pow[level.pow - 1]
+-- count flat instead of leaving a trail behind the cursor. A mid subdivide
+-- therefore churns 64 destroys and 64 creates, which is fine for an event that
+-- only fires when the pointer crosses an 8-tile cell boundary.
+local function subdivide(pdata, parent_entity, level)
+  local child = level.child
   if not child then return end
 
-  local surface = parent.surface
-  local force = parent.force
-  local centre = parent.position
-  local n = const.SUBDIVISIONS
+  local surface = parent_entity.surface
+  local force = parent_entity.force
+  local centre = parent_entity.position
+  -- Children per axis INSIDE the selected probe: level.size / child.size,
+  -- which is exactly the child's per_parent.
+  local n = child.per_parent
   local step = child.size
 
-  destroy_level(pdata, child.pow)
+  destroy_level(pdata, child.size)
 
   local list = {}
   for ix = 0, n - 1 do
@@ -239,7 +250,7 @@ local function subdivide(pdata, parent, level)
       if entity then list[#list + 1] = entity end
     end
   end
-  pdata.probes[child.pow] = list
+  pdata.probes[child.size] = list
 end
 
 --------------------------------------------------------------------------------
@@ -286,7 +297,8 @@ function tracker.get_tile(player_index)
 end
 
 --- Ticks the most recent descent took to reach a leaf. This is the tracker's
---- input lag, and the number worth watching while tuning MAX_POW/SUBDIVISIONS.
+--- input lag, and the number worth watching while tuning the size ladder in
+--- cursor/const.
 function tracker.get_last_latency(player_index)
   local pdata = pdata_of(player_index, false)
   return (pdata and pdata.last_latency) or 0
@@ -392,8 +404,8 @@ function tracker.on_selected_entity_changed(event)
 
     -- The game draws its own selection box around whatever the cursor is over,
     -- and while the tool is held that is always one of these probes. Left alone
-    -- a descent therefore flashes a 32-tile box, then 16, 8, 4 and 2, and only
-    -- the last of them is the tile actually being pointed at -- so the tool
+    -- a descent therefore flashes a 32-tile box and then an 8-tile one, and only
+    -- the leaf after them is the tile actually being pointed at -- so the tool
     -- appeared to be picking areas it was not. Dropping the selection the moment
     -- a probe has been subdivided means the leaf is the only box ever drawn.
     --

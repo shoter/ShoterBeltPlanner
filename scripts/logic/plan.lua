@@ -27,6 +27,14 @@ local FREE, WATER, BLOCKED, OWNED, CLIFF = 1, 2, 3, 4, 5
 --------------------------------------------------------------------------------
 -- survey
 
+-- These caches outlive any one plan on purpose: a plan is rebuilt on every tile
+-- the pointer crosses, and both tables are pure functions of prototype data,
+-- which cannot change within a session. Every peer in a multiplayer game
+-- therefore derives identical entries on demand, which is what makes
+-- module-local (non-storage) caching deterministic and desync-safe here.
+local obstruction_verdicts = {} -- [belt_name] = { [entity_name] = obstructs }
+local known_covers = {}         -- [tile_name] = cover tile name, or false
+
 --- Could an entity like this one be in a belt's way at all?
 ---
 --- Asked of the engine rather than answered from a list. This used to be a table
@@ -47,10 +55,29 @@ local FREE, WATER, BLOCKED, OWNED, CLIFF = 1, 2, 3, 4, 5
 local function obstruction_test(belt_name)
   local belt_layers = prototypes.entity[belt_name].collision_mask.layers
 
+  -- The same layers as an ARRAY of names, for the engine's own filter:
+  -- find_entities_filtered's runtime collision_mask takes a layer name, an
+  -- array of them, or a { name = true } dict - never the prototype's
+  -- { layers = ... } wrapper - and returns the entities whose mask shares ANY
+  -- listed layer. That is the very test the closure below performs, run
+  -- engine-side, so robots, items, ore and ghosts never reach Lua at all.
+  local layer_names = {}
+  for layer in pairs(belt_layers) do
+    layer_names[#layer_names + 1] = layer
+  end
+  -- A mask with no layers collides with nothing: the closure would reject
+  -- everything anyway, and what an empty filter array means is not something
+  -- the reference pins down, so no engine filter is used for that case.
+  if #layer_names == 0 then layer_names = nil end
+
   -- collision_mask builds a fresh table on every read, and a survey walks
   -- hundreds of entities that are mostly repeats of a handful of prototypes, so
-  -- the verdict is cached by name for the life of one plan.
-  local known = {}
+  -- the verdict is cached by name - across plans, per the note on the cache.
+  local known = obstruction_verdicts[belt_name]
+  if not known then
+    known = {}
+    obstruction_verdicts[belt_name] = known
+  end
 
   return function(entity)
     local name = entity.name
@@ -68,7 +95,7 @@ local function obstruction_test(belt_name)
 
     known[name] = obstructs
     return obstructs
-  end
+  end, layer_names
 end
 
 local function key_of(x, y)
@@ -89,9 +116,10 @@ end
 --- cannot be built on, whatever the switch says.
 ---
 --- Cached by tile name: a survey crosses many tiles of a handful of prototypes,
---- and each lookup walks two prototype references.
+--- and each lookup walks two prototype references. The cache lives across
+--- plans, per the note on it above.
 local function cover_test()
-  local known = {}
+  local known = known_covers
 
   return function(tile)
     local name = tile.name
@@ -106,7 +134,7 @@ local function cover_test()
   end
 end
 
-local function survey_box(surface, box, water, occupants, obstructs, cover_of)
+local function survey_box(surface, box, water, occupants, obstructs, cover_of, belt_layers)
   -- A water tile maps to the name of its cover tile, or to false when nothing
   -- covers it. Both say "this is water"; only the first says "and it can be
   -- bridged".
@@ -114,7 +142,12 @@ local function survey_box(surface, box, water, occupants, obstructs, cover_of)
     water[key_of(tile.position.x, tile.position.y)] = cover_of(tile)
   end
 
-  for _, entity in pairs(surface.find_entities_filtered { area = box }) do
+  -- The collision_mask filter keeps everything that cannot collide with the
+  -- belt - robots, items, ore, ghosts, biters - inside the engine, where
+  -- rejecting it is cheap. obstructs() then re-asks the same question in Lua:
+  -- a belt-and-braces check, so a surprise in the filter's semantics could
+  -- only ever cost speed, never let an obstruction through.
+  for _, entity in pairs(surface.find_entities_filtered { area = box, collision_mask = belt_layers }) do
     if entity.valid and obstructs(entity) then
       local bb = entity.bounding_box
       for x = floor(bb.left_top.x), ceil(bb.right_bottom.x) - 1 do
@@ -138,12 +171,12 @@ end
 ---
 --- Takes a LIST of boxes: a corner is surveyed as two thin bands rather than the
 --- mostly-empty rectangle enclosing them.
-local function survey(surface, boxes, obstructs)
+local function survey(surface, boxes, obstructs, belt_layers)
   local water, occupants = {}, {}
   local cover_of = cover_test()
 
   for _, box in ipairs(boxes) do
-    survey_box(surface, box, water, occupants, obstructs, cover_of)
+    survey_box(surface, box, water, occupants, obstructs, cover_of, belt_layers)
   end
 
   return water, occupants
@@ -469,8 +502,9 @@ function plan.build(surface, force, anchor, resolved, options)
     seen = {},
   }
 
+  local obstructs, belt_layers = obstruction_test(tier.belt)
   local water, occupants = survey(surface, geometry.survey_boxes(anchor, resolved),
-    obstruction_test(tier.belt))
+    obstructs, belt_layers)
 
   local specs, blockers = {}, {}
 

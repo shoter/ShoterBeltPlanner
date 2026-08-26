@@ -886,23 +886,29 @@ function selftest.run()
   local target = { x = BX + 6.5, y = BY + 3.5 }
   tracker.seed_descent(probe_pdata, surface, target)
 
+  -- probes is keyed by level size; each guessed level holds per_parent^2
+  -- probes, enough to tile its parent's cell (16 eight-tile probes, 64 leaves).
   local levels_ok, levels_detail = true, ""
-  local expected_per_level = cursor_const.SUBDIVISIONS ^ 2
-  for pow = cursor_const.MIN_POW, cursor_const.MAX_POW - 1 do
-    local list = probe_pdata.probes[pow]
-    if not list or #list ~= expected_per_level then
-      levels_ok = false
-      levels_detail = "level " .. pow .. " has " .. tostring(list and #list)
+  for _, level in ipairs(cursor_const.levels) do
+    if not level.is_root then
+      local list = probe_pdata.probes[level.size]
+      local expected = level.per_parent ^ 2
+      if not list or #list ~= expected then
+        levels_ok = false
+        levels_detail = "size " .. level.size .. " has " .. tostring(list and #list)
+          .. ", wanted " .. expected
+      end
     end
   end
   check("every level below the root is guessed", levels_ok, levels_detail)
-  check("the roots themselves are left alone", probe_pdata.probes[cursor_const.MAX_POW] == nil)
+  check("the roots themselves are left alone",
+    probe_pdata.probes[cursor_const.root.size] == nil)
 
   -- The point of the whole exercise: a leaf must be sitting on the target tile,
   -- because that is what the next tick reads the pointer position off.
   local want_x, want_y = math.floor(target.x), math.floor(target.y)
   local landed = false
-  for _, probe in ipairs(probe_pdata.probes[cursor_const.MIN_POW] or {}) do
+  for _, probe in ipairs(probe_pdata.probes[cursor_const.leaf.size] or {}) do
     if math.floor(probe.position.x) == want_x and math.floor(probe.position.y) == want_y then
       landed = true
     end
@@ -910,34 +916,37 @@ function selftest.run()
   check("a leaf probe lands on the target tile", landed,
     string.format("wanted %d,%d", want_x, want_y))
 
-  -- Each level must tile its parent exactly, or the guess leaves gaps the
-  -- pointer can sit in and the descent stalls on nothing.
+  -- Each level must tile its parent's cell exactly - the parent-size-aligned
+  -- cell containing the target - or the guess leaves gaps the pointer can sit
+  -- in and the descent stalls on nothing.
   local covers, covers_detail = true, ""
-  for pow = cursor_const.MIN_POW, cursor_const.MAX_POW - 1 do
-    local size = cursor_const.by_pow[pow].size
-    local parent_size = cursor_const.by_pow[pow + 1].size
-    local left = math.floor(target.x / parent_size) * parent_size
-    local top = math.floor(target.y / parent_size) * parent_size
+  for _, level in ipairs(cursor_const.levels) do
+    if not level.is_root then
+      local size = level.size
+      local parent_size = level.parent.size
+      local left = math.floor(target.x / parent_size) * parent_size
+      local top = math.floor(target.y / parent_size) * parent_size
 
-    local area = 0
-    for _, probe in ipairs(probe_pdata.probes[pow]) do
-      local px, py = probe.position.x - size / 2, probe.position.y - size / 2
-      if px < left or py < top or px + size > left + parent_size or py + size > top + parent_size then
-        covers, covers_detail = false, "level " .. pow .. " strays outside its parent cell"
+      local area = 0
+      for _, probe in ipairs(probe_pdata.probes[size] or {}) do
+        local px, py = probe.position.x - size / 2, probe.position.y - size / 2
+        if px < left or py < top or px + size > left + parent_size or py + size > top + parent_size then
+          covers, covers_detail = false, "size " .. size .. " strays outside its parent cell"
+        end
+        area = area + size * size
       end
-      area = area + size * size
-    end
-    if area ~= parent_size * parent_size then
-      covers, covers_detail = false, "level " .. pow .. " covers " .. area .. " of " .. (parent_size * parent_size)
+      if area ~= parent_size * parent_size then
+        covers, covers_detail = false, "size " .. size .. " covers " .. area .. " of " .. (parent_size * parent_size)
+      end
     end
   end
   check("each guessed level tiles its parent exactly", covers, covers_detail)
 
-  for pow, list in pairs(probe_pdata.probes) do
+  for key, list in pairs(probe_pdata.probes) do
     for _, probe in ipairs(list) do
       if probe.valid then probe.destroy() end
     end
-    probe_pdata.probes[pow] = nil
+    probe_pdata.probes[key] = nil
   end
 
   ----------------------------------------------------------------------------

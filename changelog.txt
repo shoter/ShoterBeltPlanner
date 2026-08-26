@@ -1,6 +1,19 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.2
+Date: 2026-08-26
+  Optimizations:
+    - The preview follows the mouse far more closely. The cursor tracker's probe ladder is now
+      32 -> 8 -> 1 rather than halving six rungs deep, and each rung costs a tick, so re-finding
+      the pointer takes at most one tick anywhere in the current 32-tile cell - even over
+      machines - and no time at all inside the 8x8 leaf field around it. A cold start converges
+      in two ticks instead of five.
+    - Re-planning reads less of the world. The survey asks the engine for only what can collide
+      with a belt, so robots, items, ore and ghosts are rejected engine-side instead of one by
+      one in script, and what a prototype means for a belt is remembered across re-plans rather
+      than re-derived on every tile the pointer crosses.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.1
-Date: 2026-08-21
+Date: 2026-08-25
   Bugfixes:
     - The tool window is no longer far wider than the things in it. Its two status lines were
       single-line labels holding whole sentences, so the window stretched to fit the longest one
